@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Search, Barcode, Plus, Minus, Trash2, ShoppingCart, CreditCard } from 'lucide-react'
 import ModalCobro from './ModalCobro'
+import { siguienteNumero } from '@/lib/numeracion'
 
 interface Producto {
   id: string
@@ -159,7 +160,7 @@ export default function POSPage() {
       const { data: cotizacion, error: errCot } = await supabase
         .from('cotizaciones')
         .insert({
-          numero:         Math.floor(Math.random() * 99999),
+          numero: await siguienteNumero(puntoVentaSeleccionado.id, 'cotizacion'),
           punto_venta_id: puntoVentaSeleccionado.id,
           fecha:          new Date().toISOString().split('T')[0],
           validez_hasta:  new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -187,7 +188,7 @@ export default function POSPage() {
         .from('comprobantes')
         .insert({
           tipo:            tipoComprobante,
-          numero:          Math.floor(Math.random() * 99999),
+          numero: await siguienteNumero(puntoVentaSeleccionado.id, tipoComprobante),
           punto_venta_id:  puntoVentaSeleccionado.id,
           fecha:           new Date().toISOString().split('T')[0],
           usuario_id:      user.id,
@@ -216,7 +217,7 @@ export default function POSPage() {
         medio_pago:     medioPago,
         monto:          total,
       })
-      
+
       // Descontar stock
       for (const item of carrito) {
         const { data: stockActual } = await supabase

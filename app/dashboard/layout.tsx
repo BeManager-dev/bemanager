@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   ShoppingCart, Package, Tag, Users, Truck,
   DollarSign, BarChart2, Settings, LogOut,
-  Menu, X, Wallet
+  Menu, X, Wallet, FileText
 } from 'lucide-react'
 
 const nav = [
@@ -21,6 +21,7 @@ const nav = [
   { href: '/dashboard/finanzas',      label: 'Finanzas',        icon: DollarSign   },
   { href: '/dashboard/reportes',      label: 'Reportes',        icon: BarChart2    },
   { href: '/dashboard/configuracion', label: 'Configuración',   icon: Settings     },
+  { href: '/dashboard/finanzas/comprobantes', label: 'Comprobantes', icon: FileText },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
