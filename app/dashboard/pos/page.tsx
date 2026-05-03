@@ -210,6 +210,13 @@ export default function POSPage() {
 
       if (errItems) { console.error('Error items comprobante:', errItems); return }
 
+      // Guardar medio de pago
+      await supabase.from('pagos_comprobante').insert({
+        comprobante_id: comprobante!.id,
+        medio_pago:     medioPago,
+        monto:          total,
+      })
+      
       // Descontar stock
       for (const item of carrito) {
         const { data: stockActual } = await supabase
