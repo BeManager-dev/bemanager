@@ -67,7 +67,6 @@ export default function POSPage() {
     setPerfil(perfilData as any)
 
     if (perfilData.rol === 'admin') {
-      // Admin puede elegir punto de venta
       const { data: pvData } = await supabase
         .from('puntos_venta')
         .select('id, nombre, numero, deposito_id')
@@ -76,7 +75,6 @@ export default function POSPage() {
       setPuntosVenta(pvData || [])
       if (pvData && pvData.length > 0) setPuntoVentaSeleccionado(pvData[0])
     } else {
-      // Vendedor usa su punto de venta asignado
       if (perfilData.punto_venta) {
         setPuntoVentaSeleccionado(perfilData.punto_venta as any)
       }
@@ -136,7 +134,7 @@ export default function POSPage() {
     setCarrito(prev => prev.filter(i => i.producto_id !== id))
   }
 
-  async function confirmarCobro(medioPago: string, tipoComprobante: string, descuentoPct: number) {
+  async function confirmarCobro(medioPago: string, tipoComprobante: string, descuentoPct: number, clienteId: string | null) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !puntoVentaSeleccionado) return
 
@@ -145,97 +143,88 @@ export default function POSPage() {
     const subtotalConDesc = subtotalBruto - descuentoMonto
     const esCotizacion = tipoComprobante === 'cotizacion'
     const iva = esCotizacion ? 0
-      : carrito.reduce((acc, i) => acc + ((i.subtotal - i.subtotal * descuentoPct / 100) / (1 + i.alicuota_iva / 100) * (i.alicuota_iva / 100)), 0)
+      : carrito.reduce((acc, i) => acc + ((i.subtotal * (1 - descuentoPct / 100)) / (1 + i.alicuota_iva / 100) * (i.alicuota_iva / 100)), 0)
     const total = subtotalConDesc
 
+    const itemsPayload = carrito.map(item => ({
+      producto_id:     item.producto_id,
+      descripcion:     item.nombre,
+      cantidad:        item.cantidad,
+      precio_unitario: item.precio,
+      alicuota_iva:    item.alicuota_iva,
+      subtotal:        item.subtotal,
+    }))
+
     if (esCotizacion) {
-      const { data: cotizacion } = await supabase.from('cotizaciones').insert({
-        numero: Math.floor(Math.random() * 99999),
-        punto_venta_id: puntoVentaSeleccionado.id,
-        fecha: new Date().toISOString().split('T')[0],
-        validez_hasta: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        usuario_id: user.id,
-        subtotal: subtotalBruto,
-        descuento_pct: descuentoPct,
-        descuento_monto: descuentoMonto,
-        iva_monto: 0,
-        total: subtotalConDesc,
-        estado: 'aceptada',
-      }).select().single()
+      const { data: cotizacion, error: errCot } = await supabase
+        .from('cotizaciones')
+        .insert({
+          numero:         Math.floor(Math.random() * 99999),
+          punto_venta_id: puntoVentaSeleccionado.id,
+          fecha:          new Date().toISOString().split('T')[0],
+          validez_hasta:  new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          usuario_id:     user.id,
+          subtotal:       subtotalBruto,
+          descuento_pct:  descuentoPct,
+          descuento_monto: descuentoMonto,
+          iva_monto:      0,
+          total:          subtotalConDesc,
+          estado:         'aceptada',
+        })
+        .select('id')
+        .single()
 
-      if (cotizacion) {
-        await supabase.from('items_cotizacion').insert(
-          carrito.map(item => ({
-            cotizacion_id: cotizacion.id,
-            producto_id: item.producto_id,
-            descripcion: item.nombre,
-            cantidad: item.cantidad,
-            precio_unitario: item.precio,
-            alicuota_iva: item.alicuota_iva,
-            subtotal: item.subtotal,
-          }))
-        )
-        // Descontar stock del depósito del punto de venta
-        for (const item of carrito) {
-          const { data: stockActual } = await supabase
-            .from('stock')
-            .select('cantidad')
-            .eq('producto_id', item.producto_id)
-            .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
-            .single()
+      if (errCot) { console.error('Error cotizacion:', errCot); return }
 
-          if (stockActual) {
-            await supabase.from('stock').update({
-              cantidad: Math.max(0, stockActual.cantidad - item.cantidad)
-            })
-            .eq('producto_id', item.producto_id)
-            .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
-          }
-        }
-      }
+      const { error: errItems } = await supabase
+        .from('items_cotizacion')
+        .insert(itemsPayload.map(i => ({ ...i, cotizacion_id: cotizacion!.id })))
+
+      if (errItems) console.error('Error items cotizacion:', errItems)
+
     } else {
-      const { data: comprobante } = await supabase.from('comprobantes').insert({
-        tipo: tipoComprobante,
-        numero: Math.floor(Math.random() * 99999),
-        punto_venta_id: puntoVentaSeleccionado.id,
-        fecha: new Date().toISOString().split('T')[0],
-        usuario_id: user.id,
-        subtotal: subtotalBruto,
-        descuento_pct: descuentoPct,
-        descuento_monto: descuentoMonto,
-        iva_monto: iva,
-        total,
-        estado: 'emitido',
-      }).select().single()
+      const { data: comprobante, error: errComp } = await supabase
+        .from('comprobantes')
+        .insert({
+          tipo:            tipoComprobante,
+          numero:          Math.floor(Math.random() * 99999),
+          punto_venta_id:  puntoVentaSeleccionado.id,
+          fecha:           new Date().toISOString().split('T')[0],
+          usuario_id:      user.id,
+          subtotal:        subtotalBruto,
+          descuento_pct:   descuentoPct,
+          descuento_monto: descuentoMonto,
+          iva_monto:       iva,
+          total,
+          estado:          'emitido',
+          cliente_id: clienteId,
+        })
+        .select('id')
+        .single()
 
-      if (comprobante) {
-        await supabase.from('items_comprobante').insert(
-          carrito.map(item => ({
-            comprobante_id: comprobante.id,
-            producto_id: item.producto_id,
-            descripcion: item.nombre,
-            cantidad: item.cantidad,
-            precio_unitario: item.precio,
-            alicuota_iva: item.alicuota_iva,
-            subtotal: item.subtotal,
-          }))
-        )
-        // Descontar stock del depósito del punto de venta
-        for (const item of carrito) {
-          const { data: stockActual } = await supabase
-            .from('stock')
-            .select('cantidad')
-            .eq('producto_id', item.producto_id)
-            .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
-            .single()
+      if (errComp) { console.error('Error comprobante:', errComp); return }
 
-          if (stockActual) {
-            await supabase.from('stock').update({
-              cantidad: Math.max(0, stockActual.cantidad - item.cantidad)
-            })
-            .eq('producto_id', item.producto_id)
-            .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
-          }
+      const { error: errItems } = await supabase
+        .from('items_comprobante')
+        .insert(itemsPayload.map(i => ({ ...i, comprobante_id: comprobante!.id })))
+
+      if (errItems) { console.error('Error items comprobante:', errItems); return }
+
+      // Descontar stock
+      for (const item of carrito) {
+        const { data: stockActual } = await supabase
+          .from('stock')
+          .select('cantidad')
+          .eq('producto_id', item.producto_id)
+          .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
+          .single()
+
+        if (stockActual) {
+          await supabase.from('stock').update({
+            cantidad: Math.max(0, Number(stockActual.cantidad) - item.cantidad)
+          })
+          .eq('producto_id', item.producto_id)
+          .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
         }
       }
     }
@@ -249,7 +238,6 @@ export default function POSPage() {
     <>
       <div className="flex flex-col gap-4 h-[calc(100vh-7rem)]">
 
-        {/* Header POS con punto de venta */}
         <div className="flex items-center justify-between">
           <div>
             {perfil?.rol === 'admin' ? (
@@ -280,7 +268,6 @@ export default function POSPage() {
         </div>
 
         <div className="flex gap-6 flex-1 min-h-0">
-          {/* Panel izquierdo */}
           <div className="flex-1 flex flex-col gap-4 min-w-0">
             <div className="bg-white rounded-xl border border-[#E2E8F0] p-4">
               <div className="relative">
@@ -325,7 +312,6 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* Panel derecho — carrito */}
           <div className="w-80 flex flex-col bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
             <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center gap-2">
               <ShoppingCart size={16} className="text-[#64748B]" />
