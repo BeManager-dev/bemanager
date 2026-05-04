@@ -40,6 +40,7 @@ function medallaRanking(pos: number) {
 
 export default function ClientesPage() {
   const supabase = createClient()
+  const [esAdmin, setEsAdmin] = useState(false)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [cargando, setCargando] = useState(true)
   const [busqueda, setBusqueda] = useState('')
@@ -49,9 +50,18 @@ export default function ClientesPage() {
   const [ordenDir, setOrdenDir] = useState<OrdenDir>('asc')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [vistaRanking, setVistaRanking] = useState(false)
-
   const [modalAbierto, setModalAbierto] = useState(false)
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
+
+  useEffect(() => {
+    async function checkRol() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('perfiles').select('rol').eq('id', user.id).single()
+      setEsAdmin(data?.rol === 'admin')
+    }
+    checkRol()
+  }, [])
 
   function toggleOrden(col: OrdenCol) {
     if (ordenCol === col) setOrdenDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -61,8 +71,6 @@ export default function ClientesPage() {
 
   async function cargarClientes() {
     setCargando(true)
-
-    // Traer clientes
     let query = supabase
       .from('clientes')
       .select('id, razon_social, nombre_fantasia, cuit, dni, condicion_iva, email, telefono, ciudad, provincia, activo, created_at', { count: 'exact' })
@@ -73,10 +81,8 @@ export default function ClientesPage() {
     if (filtroEstado !== '') query = query.eq('activo', filtroEstado === 'activo')
 
     const { data, count } = await query
-
     if (!data) { setCargando(false); return }
 
-    // Traer totales de compras por cliente
     const ids = data.map(c => c.id)
     let stats: Record<string, { total_compras: number; monto_total: number }> = {}
 
@@ -101,7 +107,6 @@ export default function ClientesPage() {
       monto_total: stats[c.id]?.monto_total ?? 0,
     }))
 
-    // Ordenar por stats si corresponde
     if (ordenCol === 'monto_total') {
       result.sort((a, b) => ordenDir === 'asc' ? a.monto_total - b.monto_total : b.monto_total - a.monto_total)
     } else if (ordenCol === 'total_compras') {
@@ -118,7 +123,7 @@ export default function ClientesPage() {
   const totalPaginas = Math.ceil(total / POR_PAGINA)
 
   async function eliminarCliente(c: Cliente) {
-    if (!confirm(`¿Eliminar a "${c.razon_social}"? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`Eliminar a "${c.razon_social}"? Esta accion no se puede deshacer.`)) return
     await supabase.from('clientes').delete().eq('id', c.id)
     cargarClientes()
   }
@@ -128,7 +133,6 @@ export default function ClientesPage() {
     cargarClientes()
   }
 
-  // Ranking: top 10 por monto
   const ranking = [...clientes].sort((a, b) => (b.monto_total ?? 0) - (a.monto_total ?? 0)).slice(0, 10)
 
   return (
@@ -140,28 +144,25 @@ export default function ClientesPage() {
           <p className="text-sm text-[#64748B] mt-0.5">{total} clientes en total</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setVistaRanking(!vistaRanking)}
-            className={`flex items-center gap-2 h-10 px-4 border text-sm font-medium rounded-lg transition-colors ${
-              vistaRanking
-                ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
-                : 'border-[#E2E8F0] bg-white hover:bg-[#F8FAFB] text-[#64748B]'
-            }`}
-          >
-            <Trophy size={15} />
-            Ranking
-          </button>
-          <button
-            onClick={() => { setClienteSeleccionado(null); setModalAbierto(true) }}
-            className="flex items-center gap-2 h-10 px-4 bg-[#00B4D8] hover:bg-[#0096B4] text-white text-sm font-medium rounded-lg transition-colors"
-          >
+          {esAdmin && (
+            <button onClick={() => setVistaRanking(!vistaRanking)}
+              className={`flex items-center gap-2 h-10 px-4 border text-sm font-medium rounded-lg transition-colors ${
+                vistaRanking
+                  ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
+                  : 'border-[#E2E8F0] bg-white hover:bg-[#F8FAFB] text-[#64748B]'
+              }`}>
+              <Trophy size={15} />
+              Ranking
+            </button>
+          )}
+          <button onClick={() => { setClienteSeleccionado(null); setModalAbierto(true) }}
+            className="flex items-center gap-2 h-10 px-4 bg-[#00B4D8] hover:bg-[#0096B4] text-white text-sm font-medium rounded-lg transition-colors">
             <Plus size={16} /> Nuevo cliente
           </button>
         </div>
       </div>
 
-      {/* Vista ranking */}
-      {vistaRanking && (
+      {esAdmin && vistaRanking && (
         <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
           <div className="px-5 py-3 border-b border-[#E2E8F0] bg-[#F8FAFB]">
             <p className="text-sm font-medium text-[#0F172A]">Top 10 clientes por monto comprado</p>
@@ -180,13 +181,12 @@ export default function ClientesPage() {
               </div>
             ))}
             {ranking.length === 0 && (
-              <p className="text-sm text-[#94A3B8] text-center py-8">Sin ventas registradas aún</p>
+              <p className="text-sm text-[#94A3B8] text-center py-8">Sin ventas registradas aun</p>
             )}
           </div>
         </div>
       )}
 
-      {/* Filtros */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] p-4">
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-48">
@@ -211,7 +211,6 @@ export default function ClientesPage() {
         </div>
       </div>
 
-      {/* Tabla */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
         <table className="w-full">
           <thead>
@@ -223,30 +222,26 @@ export default function ClientesPage() {
                 </button>
               </th>
               <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">CUIT / DNI</th>
-              <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Condición IVA</th>
+              <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Condicion IVA</th>
               <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Contacto</th>
-              <th className="text-right px-4 py-3">
-                <button onClick={() => toggleOrden('total_compras')}
-                  className="flex items-center gap-1.5 text-xs font-medium text-[#64748B] hover:text-[#0F172A] transition-colors ml-auto">
-                  Compras <IconOrden col="total_compras" actual={ordenCol} dir={ordenDir} />
-                </button>
-              </th>
-              <th className="text-right px-4 py-3">
-                <button onClick={() => toggleOrden('monto_total')}
-                  className="flex items-center gap-1.5 text-xs font-medium text-[#64748B] hover:text-[#0F172A] transition-colors ml-auto">
-                  Monto total <IconOrden col="monto_total" actual={ordenCol} dir={ordenDir} />
-                </button>
-              </th>
+              {esAdmin && (
+                <th className="text-right px-4 py-3">
+                  <button onClick={() => toggleOrden('monto_total')}
+                    className="flex items-center gap-1.5 text-xs font-medium text-[#64748B] hover:text-[#0F172A] transition-colors ml-auto">
+                    Monto total <IconOrden col="monto_total" actual={ordenCol} dir={ordenDir} />
+                  </button>
+                </th>
+              )}
               <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Estado</th>
               <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {cargando ? (
-              <tr><td colSpan={8} className="text-center py-12 text-sm text-[#94A3B8]">Cargando...</td></tr>
+              <tr><td colSpan={esAdmin ? 7 : 6} className="text-center py-12 text-sm text-[#94A3B8]">Cargando...</td></tr>
             ) : clientes.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-12 text-sm text-[#94A3B8]">
-                {busqueda ? 'Sin resultados para esa búsqueda' : 'No hay clientes cargados'}
+              <tr><td colSpan={esAdmin ? 7 : 6} className="text-center py-12 text-sm text-[#94A3B8]">
+                {busqueda ? 'Sin resultados para esa busqueda' : 'No hay clientes cargados'}
               </td></tr>
             ) : (
               clientes.map(c => (
@@ -265,14 +260,13 @@ export default function ClientesPage() {
                     <p className="text-sm text-[#64748B]">{c.email || '—'}</p>
                     {c.telefono && <p className="text-xs text-[#94A3B8]">{c.telefono}</p>}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="text-sm font-medium text-[#0F172A]">{c.total_compras ?? 0}</p>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="text-sm font-medium text-[#00B4D8]">
-                      ${(c.monto_total ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </p>
-                  </td>
+                  {esAdmin && (
+                    <td className="px-4 py-3 text-right">
+                      <p className="text-sm font-medium text-[#00B4D8]">
+                        ${(c.monto_total ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => toggleActivo(c)}
                       className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors ${
@@ -290,11 +284,13 @@ export default function ClientesPage() {
                         className="p-1.5 rounded-lg hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A] transition-colors">
                         <Pencil size={15} />
                       </button>
-                      <button onClick={() => eliminarCliente(c)}
-                        title="Eliminar"
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-[#64748B] hover:text-red-500 transition-colors">
-                        <Trash2 size={15} />
-                      </button>
+                      {esAdmin && (
+                        <button onClick={() => eliminarCliente(c)}
+                          title="Eliminar"
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-[#64748B] hover:text-red-500 transition-colors">
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

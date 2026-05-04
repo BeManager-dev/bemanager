@@ -326,8 +326,8 @@ export default function FinanzasPage() {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-sm font-medium text-[#0F172A]">Movimientos del periodo</h2>
             <div className="flex items-center gap-4 text-xs">
-              <span className="text-green-600 font-medium">Ingresos: ${resumen.ingresos_periodo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
-              <span className="text-red-500 font-medium">Egresos+Costos: ${totalEgresosYCostos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              <span className="text-green-600 font-medium">Ingresos: ${movimientos.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + m.monto, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+<span className="text-red-500 font-medium">Egresos+Costos: ${movimientos.filter(m => m.tipo !== 'ingreso').reduce((a, m) => a + m.monto, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">

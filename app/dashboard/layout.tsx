@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -11,17 +11,24 @@ import {
   Menu, X, Wallet, FileText
 } from 'lucide-react'
 
-const nav = [
-  { href: '/dashboard/pos',           label: 'Punto de venta',  icon: ShoppingCart },
-  { href: '/dashboard/stock',         label: 'Stock',           icon: Package      },
-  { href: '/dashboard/productos',     label: 'Productos',       icon: Tag          },
-  { href: '/dashboard/clientes',      label: 'Clientes',        icon: Users        },
-  { href: '/dashboard/proveedores',   label: 'Proveedores',     icon: Truck        },
-  { href: '/dashboard/finanzas/caja', label: 'Caja',            icon: Wallet       },
-  { href: '/dashboard/finanzas',      label: 'Finanzas',        icon: DollarSign   },
-  { href: '/dashboard/reportes', label: 'Dashboard', icon: BarChart2 },
-  { href: '/dashboard/configuracion', label: 'Configuración',   icon: Settings     },
-  { href: '/dashboard/finanzas/comprobantes', label: 'Comprobantes', icon: FileText },
+const navAdmin = [
+  { href: '/dashboard/pos',                    label: 'Punto de venta',  icon: ShoppingCart },
+  { href: '/dashboard/stock',                  label: 'Stock',           icon: Package      },
+  { href: '/dashboard/productos',              label: 'Productos',       icon: Tag          },
+  { href: '/dashboard/clientes',               label: 'Clientes',        icon: Users        },
+  { href: '/dashboard/proveedores',            label: 'Proveedores',     icon: Truck        },
+  { href: '/dashboard/finanzas/caja',          label: 'Caja',            icon: Wallet       },
+  { href: '/dashboard/finanzas',               label: 'Finanzas',        icon: DollarSign   },
+  { href: '/dashboard/reportes',               label: 'Dashboard',       icon: BarChart2    },
+  { href: '/dashboard/finanzas/comprobantes',  label: 'Comprobantes',    icon: FileText     },
+  { href: '/dashboard/configuracion',          label: 'Configuracion',   icon: Settings     },
+]
+
+const navVendedor = [
+  { href: '/dashboard/pos',                    label: 'Punto de venta',  icon: ShoppingCart },
+  { href: '/dashboard/finanzas/caja',          label: 'Caja',            icon: Wallet       },
+  { href: '/dashboard/clientes',               label: 'Clientes',        icon: Users        },
+  { href: '/dashboard/productos-vendedor',     label: 'Productos',       icon: Tag          },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -29,11 +36,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const supabase = createClient()
   const [open, setOpen] = useState(false)
+  const [rol, setRol] = useState<'admin' | 'vendedor' | null>(null)
+
+  useEffect(() => {
+    async function cargarRol() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('perfiles').select('rol').eq('id', user.id).single()
+      setRol(data?.rol || 'vendedor')
+    }
+    cargarRol()
+  }, [])
 
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/auth/login')
   }
+
+  const nav = rol === 'admin' ? navAdmin : navVendedor
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFB]">
@@ -79,7 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button onClick={handleLogout}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-[#64748B] hover:bg-red-50 hover:text-red-500 transition-colors">
             <LogOut size={18} strokeWidth={1.5} />
-            Cerrar sesión
+            Cerrar sesion
           </button>
         </div>
       </aside>
