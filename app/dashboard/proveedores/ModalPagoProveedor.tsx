@@ -12,48 +12,53 @@ interface Props {
 }
 
 const MEDIOS_PAGO = [
-  { id: 'efectivo',      label: 'Efectivo'       },
-  { id: 'transferencia', label: 'Transferencia'  },
-  { id: 'debito',        label: 'Débito'         },
-  { id: 'credito',       label: 'Crédito'        },
+  { id: 'efectivo',      label: 'Efectivo'      },
+  { id: 'transferencia', label: 'Transferencia' },
+  { id: 'debito',        label: 'Debito'        },
+  { id: 'credito',       label: 'Credito'       },
 ]
 
 export default function ModalPagoProveedor({ proveedor, onCerrar, onGuardado }: Props) {
   const supabase = createClient()
   const [form, setForm] = useState({
-    fecha:          new Date().toISOString().split('T')[0],
-    monto:          0,
-    medio_pago:     'transferencia',
-    concepto:       '',
+    fecha:           new Date().toISOString().split('T')[0],
+    monto:           0,
+    medio_pago:      'transferencia',
+    concepto:        '',
     comprobante_nro: '',
   })
+  const [errores, setErrores] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState('')
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
-    const { name, value, type } = e.target
-    setForm(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }))
+    const { name, value } = e.target
+    setForm(prev => ({ ...prev, [name]: value }))
+    setErrores(prev => ({ ...prev, [name]: '' }))
   }
 
   async function handleGuardar(e: React.FormEvent) {
     e.preventDefault()
-    setGuardando(true)
-    setError('')
 
+    const errs: Record<string, string> = {}
+    const monto = parseFloat(String(form.monto))
+    if (!form.monto || isNaN(monto) || monto <= 0) errs.monto = 'Ingresa un monto mayor a 0'
+    if (Object.keys(errs).length > 0) { setErrores(errs); return }
+
+    setGuardando(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     const { error } = await supabase.from('pagos_proveedor').insert({
       proveedor_id:    proveedor.id,
       fecha:           form.fecha,
-      monto:           form.monto,
+      monto:           monto,
       medio_pago:      form.medio_pago,
       concepto:        form.concepto || null,
       comprobante_nro: form.comprobante_nro || null,
       usuario_id:      user.id,
     })
 
-    if (error) { setError(error.message); setGuardando(false); return }
+    if (error) { console.error(error); setGuardando(false); return }
     setGuardando(false)
     onGuardado()
   }
@@ -79,18 +84,23 @@ export default function ModalPagoProveedor({ proveedor, onCerrar, onGuardado }: 
               <div>
                 <label className="block text-sm text-[#64748B] mb-1.5">Fecha</label>
                 <input name="fecha" type="date" value={form.fecha} onChange={handleChange}
-                  className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                  className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
                 />
               </div>
               <div>
                 <label className="block text-sm text-[#64748B] mb-1.5">Monto *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
-                  <input name="monto" type="number" min={0} step={0.01} value={form.monto === 0 ? "" : form.monto}
-                    onChange={handleChange} required
-                    className="w-full h-10 pl-7 pr-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                  <input name="monto" type="number" min={0} step={0.01}
+                    value={form.monto || ''}
+                    onChange={e => { setForm(p => ({ ...p, monto: Number(e.target.value) })); setErrores(p => ({ ...p, monto: '' })) }}
+                    placeholder="0,00"
+                    className={`w-full h-10 pl-7 pr-3 rounded-lg border text-sm focus:outline-none focus:ring-1 ${
+                      errores.monto ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                    }`}
                   />
                 </div>
+                {errores.monto && <p className="text-xs text-red-500 mt-1">{errores.monto}</p>}
               </div>
             </div>
 
@@ -113,20 +123,18 @@ export default function ModalPagoProveedor({ proveedor, onCerrar, onGuardado }: 
             <div>
               <label className="block text-sm text-[#64748B] mb-1.5">Concepto</label>
               <input name="concepto" value={form.concepto} onChange={handleChange}
-                placeholder="Ej: Pago factura octubre, mercadería..."
-                className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                placeholder="Ej: Pago factura octubre, mercaderia..."
+                className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-[#64748B] mb-1.5">N° comprobante del proveedor</label>
+              <label className="block text-sm text-[#64748B] mb-1.5">N comprobante del proveedor</label>
               <input name="comprobante_nro" value={form.comprobante_nro} onChange={handleChange}
                 placeholder="Ej: FC 0001-00012345"
-                className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
               />
             </div>
-
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           </div>
 
           <div className="px-6 pb-6 flex gap-3">
