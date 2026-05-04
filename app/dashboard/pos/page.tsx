@@ -135,19 +135,14 @@ export default function POSPage() {
     setCarrito(prev => prev.filter(i => i.producto_id !== id))
   }
 
-  async function confirmarCobro(
-    medioPago: string,
-    tipoComprobante: string,
-    descuentoPct: number,
-    clienteId: string | null
-  ): Promise<{ id: string; numero: number; tipo: string } | null> {
+  async function confirmarCobro(medioPago: string, tipoComprobante: string, descuentoPct: number, clienteId: string | null): Promise<{ id: string; numero: number; tipo: string } | null | undefined> {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || !puntoVentaSeleccionado) return null
+    if (!user || !puntoVentaSeleccionado) return
 
-    const subtotalBruto  = carrito.reduce((acc, i) => acc + i.subtotal, 0)
+    const subtotalBruto = carrito.reduce((acc, i) => acc + i.subtotal, 0)
     const descuentoMonto = subtotalBruto * (descuentoPct / 100)
     const subtotalConDesc = subtotalBruto - descuentoMonto
-    const esCotizacion   = tipoComprobante === 'cotizacion'
+    const esCotizacion = tipoComprobante === 'cotizacion'
     const iva = esCotizacion ? 0
       : carrito.reduce((acc, i) => acc + ((i.subtotal * (1 - descuentoPct / 100)) / (1 + i.alicuota_iva / 100) * (i.alicuota_iva / 100)), 0)
     const total = subtotalConDesc
@@ -162,27 +157,25 @@ export default function POSPage() {
     }))
 
     if (esCotizacion) {
-      const numero = await siguienteNumero(puntoVentaSeleccionado.id, 'cotizacion')
       const { data: cotizacion, error: errCot } = await supabase
         .from('cotizaciones')
         .insert({
-          numero,
-          punto_venta_id:  puntoVentaSeleccionado.id,
-          fecha:           new Date().toISOString().split('T')[0],
-          validez_hasta:   new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          usuario_id:      user.id,
-          subtotal:        subtotalBruto,
-          descuento_pct:   descuentoPct,
+          numero: await siguienteNumero(puntoVentaSeleccionado.id, 'cotizacion'),
+          punto_venta_id: puntoVentaSeleccionado.id,
+          fecha:          new Date().toISOString().split('T')[0],
+          validez_hasta:  new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          usuario_id:     user.id,
+          subtotal:       subtotalBruto,
+          descuento_pct:  descuentoPct,
           descuento_monto: descuentoMonto,
-          iva_monto:       0,
-          total:           subtotalConDesc,
-          estado:          'aceptada',
-          cliente_id:      clienteId,
+          iva_monto:      0,
+          total:          subtotalConDesc,
+          estado:         'aceptada',
         })
-        .select('id, numero')
+        .select('id')
         .single()
 
-      if (errCot) { console.error('Error cotizacion:', errCot); return null }
+      if (errCot) { console.error('Error cotizacion:', errCot); return }
 
       const { error: errItems } = await supabase
         .from('items_cotizacion')
@@ -190,16 +183,12 @@ export default function POSPage() {
 
       if (errItems) console.error('Error items cotizacion:', errItems)
 
-      setCarrito([])
-      return { id: cotizacion!.id, numero: cotizacion!.numero, tipo: 'cotizacion' }
-
     } else {
-      const numero = await siguienteNumero(puntoVentaSeleccionado.id, tipoComprobante)
       const { data: comprobante, error: errComp } = await supabase
         .from('comprobantes')
         .insert({
           tipo:            tipoComprobante,
-          numero,
+          numero: await siguienteNumero(puntoVentaSeleccionado.id, tipoComprobante),
           punto_venta_id:  puntoVentaSeleccionado.id,
           fecha:           new Date().toISOString().split('T')[0],
           usuario_id:      user.id,
@@ -209,25 +198,27 @@ export default function POSPage() {
           iva_monto:       iva,
           total,
           estado:          'emitido',
-          cliente_id:      clienteId,
+          cliente_id: clienteId,
         })
-        .select('id, numero')
+        .select('id')
         .single()
 
-      if (errComp) { console.error('Error comprobante:', errComp); return null }
+      if (errComp) { console.error('Error comprobante:', errComp); return }
 
       const { error: errItems } = await supabase
         .from('items_comprobante')
         .insert(itemsPayload.map(i => ({ ...i, comprobante_id: comprobante!.id })))
 
-      if (errItems) { console.error('Error items comprobante:', errItems); return null }
+      if (errItems) { console.error('Error items comprobante:', errItems); return }
 
+      // Guardar medio de pago
       await supabase.from('pagos_comprobante').insert({
         comprobante_id: comprobante!.id,
         medio_pago:     medioPago,
         monto:          total,
       })
 
+      // Descontar stock
       for (const item of carrito) {
         const { data: stockActual } = await supabase
           .from('stock')
@@ -244,10 +235,9 @@ export default function POSPage() {
           .eq('deposito_id', puntoVentaSeleccionado.deposito_id)
         }
       }
-
-      setCarrito([])
-      return { id: comprobante!.id, numero: comprobante!.numero, tipo: tipoComprobante }
     }
+
+    setCarrito([])
   }
 
   const subtotal = carrito.reduce((acc, i) => acc + i.subtotal, 0)
@@ -296,7 +286,7 @@ export default function POSPage() {
                   type="text"
                   value={busqueda}
                   onChange={e => setBusqueda(e.target.value)}
-                  placeholder="Buscar por nombre, codigo de barras o SKU..."
+                  placeholder="Buscar por nombre, código de barras o SKU..."
                   className="w-full h-11 pl-9 pr-9 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8] transition-colors"
                 />
               </div>
@@ -309,7 +299,7 @@ export default function POSPage() {
                     className={`w-full flex items-center justify-between px-4 py-3 hover:bg-[#F8FAFB] transition-colors text-left ${i > 0 ? 'border-t border-[#E2E8F0]' : ''}`}>
                     <div>
                       <p className="text-sm font-medium text-[#0F172A]">{p.nombre}</p>
-                      <p className="text-xs text-[#94A3B8] mt-0.5">{p.sku || p.codigo_barras || '---'}</p>
+                      <p className="text-xs text-[#94A3B8] mt-0.5">{p.sku || p.codigo_barras || '—'}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-[#00B4D8]">${p.precio.toLocaleString('es-AR')}</p>
@@ -325,7 +315,7 @@ export default function POSPage() {
             {carrito.length === 0 && !busqueda && (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-[#94A3B8]">
                 <ShoppingCart size={48} strokeWidth={1} className="mb-3" />
-                <p className="text-sm">Busca un producto o escanea un codigo de barras</p>
+                <p className="text-sm">Buscá un producto o escaneá un código de barras</p>
               </div>
             )}
           </div>
@@ -402,4 +392,5 @@ export default function POSPage() {
       )}
     </>
   )
+  return null
 }

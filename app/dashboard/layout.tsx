@@ -19,7 +19,7 @@ const nav = [
   { href: '/dashboard/proveedores',   label: 'Proveedores',     icon: Truck        },
   { href: '/dashboard/finanzas/caja', label: 'Caja',            icon: Wallet       },
   { href: '/dashboard/finanzas',      label: 'Finanzas',        icon: DollarSign   },
-  { href: '/dashboard/reportes',      label: 'Reportes',        icon: BarChart2    },
+  { href: '/dashboard/reportes', label: 'Dashboard', icon: BarChart2 },
   { href: '/dashboard/configuracion', label: 'Configuración',   icon: Settings     },
   { href: '/dashboard/finanzas/comprobantes', label: 'Comprobantes', icon: FileText },
 ]

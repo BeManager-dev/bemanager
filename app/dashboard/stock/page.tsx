@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Search, ArrowLeftRight, Plus, History, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, AlertCircle } from 'lucide-react'
+import { Search, ArrowLeftRight, Plus, History, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, AlertCircle, Layers } from 'lucide-react'
 import ModalTransferencia from './ModalTransferencia'
 import ModalAjusteStock from './ModalAjusteStock'
 import ModalHistorialStock from './ModalHistorialStock'
+import AjusteMasivo from './AjusteMasivo'
+import TransferenciaMasiva from './TransferenciaMasiva'
 
 interface StockItem {
   producto_id: string
@@ -43,6 +45,8 @@ export default function StockPage() {
   const [modalTransferencia, setModalTransferencia] = useState(false)
   const [modalAjuste, setModalAjuste] = useState(false)
   const [modalHistorial, setModalHistorial] = useState(false)
+  const [modalAjusteMasivo, setModalAjusteMasivo] = useState(false)
+  const [modalTransferenciaMasiva, setModalTransferenciaMasiva] = useState(false)
   const [productoSeleccionado, setProductoSeleccionado] = useState<StockItem | null>(null)
 
   function toggleOrden(col: OrdenCol) {
@@ -86,52 +90,29 @@ export default function StockPage() {
     let result: StockItem[] = productos.map(p => {
       const deps = stockMap[p.id] || {}
       const stockTotal = Object.values(deps).reduce((a, b) => a + b, 0)
-
-      // Alerta basada en ubicaciones individuales
-      // critico = alguna ubicación tiene 0
-      // bajo = alguna ubicación tiene entre 1 y 4
       const tieneAlgunCero = depositos.some(d => (deps[d.id] ?? 0) === 0)
       const tieneAlgunBajo = depositos.some(d => {
         const cant = deps[d.id] ?? 0
         return cant > 0 && cant < 5
       })
-
       let alerta: StockItem['alerta'] = null
       if (tieneAlgunCero) alerta = 'critico'
       else if (tieneAlgunBajo) alerta = 'bajo'
-
-      return {
-        producto_id: p.id,
-        nombre: p.nombre,
-        sku: p.sku,
-        codigo_barras: p.codigo_barras,
-        depositos: deps,
-        stock_total: stockTotal,
-        alerta,
-      }
+      return { producto_id: p.id, nombre: p.nombre, sku: p.sku, codigo_barras: p.codigo_barras, depositos: deps, stock_total: stockTotal, alerta }
     })
 
-    // Filtro por depósito específico
     if (filtroDeposito) {
-      result = result.map(item => ({
-        ...item,
-        // Para ordenar por total cuando hay filtro de depósito, usamos el stock de esa ubicación
-        stock_total: item.depositos[filtroDeposito] ?? 0,
-      }))
+      result = result.map(item => ({ ...item, stock_total: item.depositos[filtroDeposito] ?? 0 }))
     }
 
-    // Filtro stock bajo
     if (filtroStockBajo) {
       if (filtroDeposito) {
-        // Filtrar por stock bajo en esa ubicación específica
         result = result.filter(i => (i.depositos[filtroDeposito] ?? 0) < 5)
       } else {
-        // Filtrar por stock bajo en alguna ubicación
         result = result.filter(i => i.alerta !== null)
       }
     }
 
-    // Ordenamiento
     if (ordenCol === 'stock_total') {
       result.sort((a, b) => ordenDir === 'asc' ? a.stock_total - b.stock_total : b.stock_total - a.stock_total)
     } else {
@@ -153,22 +134,27 @@ export default function StockPage() {
   const total = todosLosItems.length
   const totalPaginas = Math.ceil(total / POR_PAGINA)
   const items = todosLosItems.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
-
   const totalCriticos = todosLosItems.filter(i => i.alerta === 'critico').length
   const totalBajos = todosLosItems.filter(i => i.alerta === 'bajo').length
 
   return (
     <div className="space-y-4">
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-medium text-[#0F172A]">Stock</h1>
           <p className="text-sm text-[#64748B] mt-0.5">{total} productos · {depositos.length} ubicaciones</p>
         </div>
-        <button onClick={() => { setProductoSeleccionado(null); setModalTransferencia(true) }}
-          className="flex items-center gap-2 h-10 px-4 bg-[#00B4D8] hover:bg-[#0096B4] text-white text-sm font-medium rounded-lg transition-colors">
-          <ArrowLeftRight size={16} /> Transferir stock
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setModalAjusteMasivo(true)}
+            className="flex items-center gap-2 h-10 px-4 border border-[#E2E8F0] bg-white hover:bg-[#F8FAFB] text-sm text-[#64748B] font-medium rounded-lg transition-colors">
+            <Layers size={16} /> Ajuste masivo
+          </button>
+          <button onClick={() => setModalTransferenciaMasiva(true)}
+            className="flex items-center gap-2 h-10 px-4 border border-[#E2E8F0] bg-white hover:bg-[#F8FAFB] text-sm text-[#64748B] font-medium rounded-lg transition-colors">
+            <ArrowLeftRight size={16} /> Transferencia masiva
+          </button>
+        </div>
       </div>
 
       {!filtroStockBajo && (totalCriticos > 0 || totalBajos > 0) && (
@@ -176,13 +162,13 @@ export default function StockPage() {
           {totalCriticos > 0 && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl">
               <AlertCircle size={15} className="text-red-500" />
-              <span className="text-sm text-red-600 font-medium">{totalCriticos} productos sin stock en alguna ubicación</span>
+              <span className="text-sm text-red-600 font-medium">{totalCriticos} productos sin stock en alguna ubicacion</span>
             </div>
           )}
           {totalBajos > 0 && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 border border-orange-200 rounded-xl">
               <AlertTriangle size={15} className="text-orange-500" />
-              <span className="text-sm text-orange-600 font-medium">{totalBajos} productos con stock bajo en alguna ubicación</span>
+              <span className="text-sm text-orange-600 font-medium">{totalBajos} productos con stock bajo en alguna ubicacion</span>
             </div>
           )}
         </div>
@@ -193,7 +179,7 @@ export default function StockPage() {
           <div className="relative flex-1 min-w-48">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input type="text" value={busqueda} onChange={e => { setBusqueda(e.target.value); setPagina(1) }}
-              placeholder="Buscar producto, SKU o código de barras..."
+              placeholder="Buscar producto, SKU o codigo de barras..."
               className="w-full h-9 pl-8 pr-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
             />
           </div>
@@ -231,9 +217,7 @@ export default function StockPage() {
       )}
 
       {!depositosCargados ? (
-        <div className="bg-white rounded-xl border border-[#E2E8F0] p-12 text-center text-sm text-[#94A3B8]">
-          Cargando ubicaciones...
-        </div>
+        <div className="bg-white rounded-xl border border-[#E2E8F0] p-12 text-center text-sm text-[#94A3B8]">Cargando ubicaciones...</div>
       ) : (
         <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden overflow-x-auto">
           <table className="w-full min-w-max">
@@ -246,13 +230,10 @@ export default function StockPage() {
                   </button>
                 </th>
                 <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">SKU</th>
-                <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Código de barras</th>
+                <th className="text-right text-xs font-medium text-[#64748B] px-4 py-3">Codigo de barras</th>
                 {depositos.map(d => (
-                  <th key={d.id} className={`text-right text-xs font-medium px-4 py-3 whitespace-nowrap ${
-                    filtroDeposito === d.id ? 'text-[#00B4D8]' : 'text-[#64748B]'
-                  }`}>
-                    {d.nombre}
-                    {filtroDeposito === d.id && <span className="ml-1 text-[10px]">▼</span>}
+                  <th key={d.id} className={`text-right text-xs font-medium px-4 py-3 whitespace-nowrap ${filtroDeposito === d.id ? 'text-[#00B4D8]' : 'text-[#64748B]'}`}>
+                    {d.nombre}{filtroDeposito === d.id && <span className="ml-1 text-[10px]">▼</span>}
                   </th>
                 ))}
                 <th className="text-right px-4 py-3">
@@ -268,50 +249,31 @@ export default function StockPage() {
               {cargando ? (
                 <tr><td colSpan={6 + depositos.length} className="text-center py-12 text-sm text-[#94A3B8]">Cargando...</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={6 + depositos.length} className="text-center py-12 text-sm text-[#94A3B8]">
-                  Sin resultados para esos filtros
-                </td></tr>
+                <tr><td colSpan={6 + depositos.length} className="text-center py-12 text-sm text-[#94A3B8]">Sin resultados</td></tr>
               ) : (
                 items.map(item => (
                   <tr key={item.producto_id} className={`hover:bg-[#F8FAFB] transition-colors ${
-                    item.alerta === 'critico' ? 'bg-red-50/30'
-                    : item.alerta === 'bajo' ? 'bg-orange-50/30'
-                    : ''
+                    item.alerta === 'critico' ? 'bg-red-50/30' : item.alerta === 'bajo' ? 'bg-orange-50/30' : ''
                   }`}>
-                    <td className="px-4 py-3 text-left">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {item.alerta === 'critico' && <AlertCircle size={13} className="text-red-500 shrink-0" />}
                         {item.alerta === 'bajo' && <AlertTriangle size={13} className="text-orange-500 shrink-0" />}
                         <p className="text-sm font-medium text-[#0F172A]">{item.nombre}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <p className="text-sm text-[#64748B]">{item.sku || '—'}</p>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <p className="text-sm text-[#64748B] font-mono">{item.codigo_barras || '—'}</p>
-                    </td>
+                    <td className="px-4 py-3 text-right"><p className="text-sm text-[#64748B]">{item.sku || '—'}</p></td>
+                    <td className="px-4 py-3 text-right"><p className="text-sm text-[#64748B] font-mono">{item.codigo_barras || '—'}</p></td>
                     {depositos.map(d => {
                       const cant = item.depositos[d.id] ?? 0
-                      const esUbicacionFiltrada = filtroDeposito === d.id
                       return (
-                        <td key={d.id} className={`px-4 py-3 text-right ${esUbicacionFiltrada ? 'bg-[#F0FBFE]' : ''}`}>
-                          <span className={`text-sm font-medium ${
-                            cant === 0 ? 'text-red-500'
-                            : cant < 5 ? 'text-orange-500'
-                            : 'text-[#0F172A]'
-                          }`}>
-                            {cant}
-                          </span>
+                        <td key={d.id} className={`px-4 py-3 text-right ${filtroDeposito === d.id ? 'bg-[#F0FBFE]' : ''}`}>
+                          <span className={`text-sm font-medium ${cant === 0 ? 'text-red-500' : cant < 5 ? 'text-orange-500' : 'text-[#0F172A]'}`}>{cant}</span>
                         </td>
                       )
                     })}
                     <td className="px-4 py-3 text-right">
-                      <span className={`text-sm font-medium ${
-                        item.stock_total === 0 ? 'text-red-500'
-                        : item.stock_total < 5 ? 'text-orange-500'
-                        : 'text-[#0F172A]'
-                      }`}>
+                      <span className={`text-sm font-medium ${item.stock_total === 0 ? 'text-red-500' : item.stock_total < 5 ? 'text-orange-500' : 'text-[#0F172A]'}`}>
                         {item.stock_total}
                       </span>
                     </td>
@@ -342,9 +304,7 @@ export default function StockPage() {
 
           {totalPaginas > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-[#E2E8F0]">
-              <p className="text-sm text-[#64748B]">
-                Mostrando {((pagina - 1) * POR_PAGINA) + 1}–{Math.min(pagina * POR_PAGINA, total)} de {total}
-              </p>
+              <p className="text-sm text-[#64748B]">Mostrando {((pagina - 1) * POR_PAGINA) + 1}–{Math.min(pagina * POR_PAGINA, total)} de {total}</p>
               <div className="flex items-center gap-2">
                 <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}
                   className="p-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFB] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
@@ -376,6 +336,18 @@ export default function StockPage() {
       {modalHistorial && productoSeleccionado && (
         <ModalHistorialStock producto={productoSeleccionado} depositos={depositos}
           onCerrar={() => setModalHistorial(false)}
+        />
+      )}
+      {modalAjusteMasivo && (
+        <AjusteMasivo
+          onCerrar={() => setModalAjusteMasivo(false)}
+          onGuardado={() => { setModalAjusteMasivo(false); cargarStock() }}
+        />
+      )}
+      {modalTransferenciaMasiva && (
+        <TransferenciaMasiva
+          onCerrar={() => setModalTransferenciaMasiva(false)}
+          onGuardado={() => { setModalTransferenciaMasiva(false); cargarStock() }}
         />
       )}
     </div>

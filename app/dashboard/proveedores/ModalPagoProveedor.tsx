@@ -86,7 +86,7 @@ export default function ModalPagoProveedor({ proveedor, onCerrar, onGuardado }: 
                 <label className="block text-sm text-[#64748B] mb-1.5">Monto *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
-                  <input name="monto" type="number" min={0} step={0.01} value={form.monto}
+                  <input name="monto" type="number" min={0} step={0.01} value={form.monto === 0 ? "" : form.monto}
                     onChange={handleChange} required
                     className="w-full h-10 pl-7 pr-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
                   />
