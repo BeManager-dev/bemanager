@@ -81,35 +81,36 @@ export default function VouchersPage() {
     ventana.document.write(`
       <html><head><title>${tipo} ${v.codigo}</title>
       <style>
+        @page { size: 400px 480px; margin: 0; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f5f5f5; }
-        .card { background: white; border-radius: 16px; padding: 40px; max-width: 400px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }
-        .logo { font-size: 28px; font-weight: bold; color: #00B4D8; margin-bottom: 8px; }
-        .tipo { font-size: 14px; color: #64748B; margin-bottom: 24px; }
-        .monto { font-size: 48px; font-weight: bold; color: #0F172A; margin-bottom: 8px; }
-        .monto-label { font-size: 12px; color: #94A3B8; margin-bottom: 24px; }
-        .codigo-label { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .codigo { font-size: 22px; font-family: monospace; font-weight: bold; color: #00B4D8; letter-spacing: 2px; background: #E0F7FC; padding: 12px 20px; border-radius: 8px; margin-bottom: 24px; }
-        .info { font-size: 12px; color: #64748B; line-height: 1.6; }
-        .vence { font-size: 13px; color: #94A3B8; margin-top: 16px; }
-        .divider { border: none; border-top: 1px dashed #E2E8F0; margin: 20px 0; }
-        ${v.beneficiario_nombre ? `.beneficiario { font-size: 14px; color: #0F172A; font-weight: bold; margin-bottom: 4px; }` : ''}
-        @media print { body { background: white; } .card { box-shadow: none; } }
+        body { font-family: Arial, sans-serif; width: 400px; height: 480px; display: flex; align-items: center; justify-content: center; background: #f5f5f5; }
+        .card { border-radius: 16px; padding: 36px; width: 360px; text-align: center; ${v.tipo === 'gift_card' ? 'background: linear-gradient(135deg, #00B4D8, #0096B4); color: white;' : 'background: white; border: 2px solid #00B4D8; color: #0F172A;'} }
+        .logo { font-size: 28px; font-weight: bold; margin-bottom: 4px; ${v.tipo === 'gift_card' ? '' : 'color: #00B4D8;'} }
+        .tipo { font-size: 13px; margin-bottom: 24px; ${v.tipo === 'gift_card' ? 'opacity: 0.8;' : 'color: #64748B;'} }
+        .monto { font-size: 48px; font-weight: bold; margin-bottom: 4px; ${v.tipo !== 'gift_card' ? 'color: #00B4D8;' : ''} }
+        .monto-label { font-size: 11px; margin-bottom: 24px; ${v.tipo === 'gift_card' ? 'opacity: 0.7;' : 'color: #94A3B8;'} text-transform: uppercase; letter-spacing: 1px; }
+        .divider { border: none; border-top: 1px ${v.tipo === 'gift_card' ? 'solid rgba(255,255,255,0.25)' : 'dashed #E2E8F0'}; margin: 0 0 20px 0; }
+        .codigo-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; ${v.tipo === 'gift_card' ? 'opacity: 0.7;' : 'color: #94A3B8;'} }
+        .codigo { font-size: 20px; font-family: 'Courier New', monospace; font-weight: bold; letter-spacing: 2px; padding: 12px 16px; border-radius: 10px; margin-bottom: 20px; ${v.tipo === 'gift_card' ? 'background: rgba(255,255,255,0.2);' : 'background: #E0F7FC; color: #00B4D8;'} }
+        .info { font-size: 11px; line-height: 1.7; ${v.tipo === 'gift_card' ? 'opacity: 0.7;' : 'color: #64748B;'} }
+        .vence { font-size: 11px; margin-top: 10px; ${v.tipo === 'gift_card' ? 'opacity: 0.55;' : 'color: #94A3B8;'} }
+        ${v.beneficiario_nombre ? `.beneficiario { font-size: 18px; font-weight: bold; margin-bottom: 16px; }` : ''}
+        @media print {
+          @page { size: 400px 480px; margin: 0; }
+          body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
       </style></head>
       <body>
         <div class="card">
           <div class="logo">be happy</div>
-          <div class="tipo">${tipo}</div>
+          <div class="tipo">${v.tipo === 'gift_card' ? '🎁 Gift Card' : '🎫 Voucher'}</div>
           ${v.beneficiario_nombre ? `<div class="beneficiario">Para: ${v.beneficiario_nombre}</div>` : ''}
           <div class="monto">$${Number(v.monto).toLocaleString('es-AR')}</div>
           <div class="monto-label">Monto del ${tipo.toLowerCase()}</div>
           <hr class="divider">
           <div class="codigo-label">Codigo unico</div>
           <div class="codigo">${v.codigo}</div>
-          <div class="info">
-            Valido en cualquier sucursal BeHappy<br>
-            Uso unico — no acumulable
-          </div>
+          <div class="info">Valido en cualquier sucursal BeHappy<br>Uso unico — no acumulable</div>
           <div class="vence">Vence: ${vencimiento}</div>
         </div>
         <script>window.onload = () => window.print()<\/script>

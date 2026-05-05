@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, CreditCard, Banknote, ArrowRightLeft, Search, User, Printer, RefreshCw } from 'lucide-react'
+import { X, CreditCard, Banknote, ArrowRightLeft, Search, User, Printer, RefreshCw, Ticket, Check, AlertCircle } from 'lucide-react'
 
 interface ItemCarrito {
   producto_id: string
@@ -16,10 +16,11 @@ interface ItemCarrito {
 interface Props {
   carrito: ItemCarrito[]
   onCerrar: () => void
-  onConfirmar: (medioPago: string, tipoComprobante: string, descuentoPct: number, clienteId: string | null) => Promise<{ id: string; numero: number; tipo: string } | null | undefined>
+  onConfirmar: (medioPago: string, tipoComprobante: string, descuentoPct: number, clienteId: string | null, voucherId?: string | null) => Promise<{ id: string; numero: number; tipo: string } | null | undefined>
 }
 
 interface Cliente { id: string; razon_social: string; cuit: string | null; dni: string | null }
+interface Voucher { id: string; codigo: string; monto: number; tipo: string; vence_at: string | null }
 
 const tiposComprobante = [
   { id: 'cotizacion', label: 'Cotizacion', esFactura: false },
@@ -52,8 +53,17 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
   const [clientesResultado, setClientesResultado] = useState<Cliente[]>([])
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [mostrarBuscador, setMostrarBuscador] = useState(false)
-  const comprobanteRef = useRef<HTMLDivElement>(null)
 
+  // Voucher
+  const [usarVoucher, setUsarVoucher]         = useState(false)
+  const [codigoVoucher, setCodigoVoucher]     = useState('')
+  const [voucher, setVoucher]                 = useState<Voucher | null>(null)
+  const [errorVoucher, setErrorVoucher]       = useState('')
+  const [validandoVoucher, setValidandoVoucher] = useState(false)
+  const [medioPagoResto, setMedioPagoResto]   = useState('efectivo')
+  const [montoVoucherUsado, setMontoVoucherUsado] = useState(0)
+
+  const comprobanteRef = useRef<HTMLDivElement>(null)
   const esCotizacion = tipoComprobante === 'cotizacion'
 
   useEffect(() => {
@@ -71,17 +81,70 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
   const totalBruto     = carrito.reduce((acc, i) => acc + i.subtotal, 0)
   const descuentoMonto = totalBruto * (descuentoPct / 100)
   const totalFinal     = totalBruto - descuentoMonto
-  const ivaIncluido    = esCotizacion ? 0 : carrito.reduce((acc, i) => {
+  const montoVoucher   = voucher ? Math.min(Number(voucher.monto), totalFinal) : 0
+  const totalAResto    = totalFinal - montoVoucher
+
+  const ivaIncluido = esCotizacion ? 0 : carrito.reduce((acc, i) => {
     const subtConDesc = i.subtotal * (1 - descuentoPct / 100)
     return acc + subtConDesc - subtConDesc / (1 + i.alicuota_iva / 100)
   }, 0)
   const netoSinIva = totalFinal - ivaIncluido
 
+  async function validarVoucher() {
+    if (!codigoVoucher.trim()) return
+    setValidandoVoucher(true)
+    setErrorVoucher('')
+    setVoucher(null)
+
+    const { data } = await supabase.from('vouchers')
+      .select('id, codigo, monto, tipo, vence_at')
+      .eq('codigo', codigoVoucher.trim().toUpperCase())
+      .eq('usado', false)
+      .single()
+
+    if (!data) {
+      setErrorVoucher('Codigo invalido o voucher ya utilizado')
+      setValidandoVoucher(false)
+      return
+    }
+
+    if (data.vence_at && new Date(data.vence_at) < new Date()) {
+      setErrorVoucher('Este voucher esta vencido')
+      setValidandoVoucher(false)
+      return
+    }
+
+    setVoucher(data)
+    setValidandoVoucher(false)
+  }
+
   async function handleConfirmar() {
     setProcesando(true)
     setCarritoConfirmado([...carrito])
     setDescuentoConfirmado(descuentoPct)
-    const resultado = await onConfirmar(medioPago, tipoComprobante, descuentoPct, clienteSeleccionado?.id || null)
+    setMontoVoucherUsado(montoVoucher)
+
+    const medioPagoFinal = usarVoucher && voucher
+      ? (totalAResto > 0 ? `voucher+${medioPagoResto}` : 'voucher')
+      : medioPago
+
+    const resultado = await onConfirmar(
+      medioPagoFinal, tipoComprobante, descuentoPct,
+      clienteSeleccionado?.id || null,
+      voucher?.id || null
+    )
+
+    // Marcar voucher como usado
+    if (voucher && resultado) {
+      const esComp = resultado.tipo !== 'cotizacion'
+      await supabase.from('vouchers').update({
+        usado: true,
+        usado_at: new Date().toISOString(),
+        usado_en_comprobante_id: esComp ? resultado.id : null,
+        usado_en_cotizacion_id: !esComp ? resultado.id : null,
+      }).eq('id', voucher.id)
+    }
+
     setComprobante(resultado ?? null)
     setProcesando(false)
   }
@@ -145,15 +208,12 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
                 {LABEL_TIPO[comprobante.tipo] || comprobante.tipo} N {String(comprobante.numero).padStart(8, '0')}
               </div>
               <div className="flex justify-between text-xs text-[#64748B]">
-                <span>Fecha: {fechaHoy}</span>
-                <span>Hora: {horaHoy}</span>
+                <span>Fecha: {fechaHoy}</span><span>Hora: {horaHoy}</span>
               </div>
               {clienteSeleccionado && (
                 <div className="text-xs text-[#64748B]">Cliente: {clienteSeleccionado.razon_social}</div>
               )}
-
               <div className="border-t border-dashed border-[#E2E8F0] my-2" />
-
               {carritoConfirmado.map((item, i) => (
                 <div key={i}>
                   <div className="text-xs font-medium text-[#0F172A]">{item.nombre}</div>
@@ -163,36 +223,37 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
                   </div>
                 </div>
               ))}
-
               <div className="border-t border-dashed border-[#E2E8F0] my-2" />
-
               {descuentoConfirmado > 0 && (
                 <div className="flex justify-between text-xs text-green-600">
                   <span>Descuento ({descuentoConfirmado}%)</span>
                   <span>-${descuentoMontoConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                 </div>
               )}
+              {montoVoucherUsado > 0 && voucher && (
+                <div className="flex justify-between text-xs text-[#00B4D8]">
+                  <span>Voucher {voucher.codigo}</span>
+                  <span>-${montoVoucherUsado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
               {!esCotConf && (
                 <>
                   <div className="flex justify-between text-xs text-[#64748B]">
-                    <span>Neto</span>
-                    <span>${netoSinIvaConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    <span>Neto</span><span>${netoSinIvaConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-xs text-[#64748B]">
-                    <span>IVA 21%</span>
-                    <span>${ivaIncluidoConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    <span>IVA 21%</span><span>${ivaIncluidoConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                   </div>
                 </>
               )}
               <div className="flex justify-between text-base font-bold text-[#0F172A] pt-1">
-                <span>TOTAL</span>
-                <span>${totalFinalConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                <span>TOTAL</span><span>${totalFinalConf.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between text-xs text-[#64748B]">
-                <span>Medio de pago</span>
-                <span className="capitalize">{medioPago}</span>
-              </div>
-
+              {voucher && totalAResto > 0 && (
+                <div className="flex justify-between text-xs text-[#64748B]">
+                  <span>Resto a pagar</span><span>${totalAResto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
               <div className="border-t border-dashed border-[#E2E8F0] my-2" />
               <div className="text-center text-xs text-[#94A3B8]">Gracias por su compra</div>
             </div>
@@ -214,9 +275,7 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
       <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="text-base font-medium text-[#0F172A]">Confirmar cobro</h2>
-          <button onClick={onCerrar} className="p-1.5 rounded-lg hover:bg-[#F8FAFB] text-[#64748B]">
-            <X size={18} />
-          </button>
+          <button onClick={onCerrar} className="p-1.5 rounded-lg hover:bg-[#F8FAFB] text-[#64748B]"><X size={18} /></button>
         </div>
 
         <div className="px-6 py-5 space-y-5 max-h-[75vh] overflow-y-auto">
@@ -230,6 +289,7 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
             ))}
           </div>
 
+          {/* Cliente */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-[#0F172A]">Cliente</p>
@@ -243,9 +303,7 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
                   <p className="text-xs text-[#64748B]">{clienteSeleccionado.cuit || clienteSeleccionado.dni || 'Sin documento'}</p>
                 </div>
                 <button onClick={() => { setClienteSeleccionado(null); setBusquedaCliente('') }}
-                  className="text-[#94A3B8] hover:text-red-400 transition-colors">
-                  <X size={15} />
-                </button>
+                  className="text-[#94A3B8] hover:text-red-400 transition-colors"><X size={15} /></button>
               </div>
             ) : (
               <div className="relative">
@@ -271,6 +329,7 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
             )}
           </div>
 
+          {/* Tipo comprobante */}
           <div>
             <p className="text-sm font-medium text-[#0F172A] mb-2">Tipo de comprobante</p>
             <div className="grid grid-cols-4 gap-2">
@@ -279,14 +338,13 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
                   className={`py-2.5 px-2 rounded-xl border text-center transition-colors ${
                     tipoComprobante === t.id ? 'border-[#00B4D8] bg-[#E0F7FC]' : 'border-[#E2E8F0] hover:bg-[#F8FAFB]'
                   }`}>
-                  <p className={`text-sm font-medium ${tipoComprobante === t.id ? 'text-[#00B4D8]' : 'text-[#0F172A]'}`}>
-                    {t.label}
-                  </p>
+                  <p className={`text-sm font-medium ${tipoComprobante === t.id ? 'text-[#00B4D8]' : 'text-[#0F172A]'}`}>{t.label}</p>
                 </button>
               ))}
             </div>
           </div>
 
+          {/* Descuento */}
           <div>
             <p className="text-sm font-medium text-[#0F172A] mb-2">Descuento</p>
             <div className="flex items-center gap-2">
@@ -308,24 +366,93 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
             </div>
           </div>
 
+          {/* Voucher */}
           <div>
-            <p className="text-sm font-medium text-[#0F172A] mb-2">Medio de pago</p>
-            <div className="grid grid-cols-2 gap-2">
-              {mediosPago.map(m => {
-                const Icon = m.icon
-                return (
-                  <button key={m.id} onClick={() => setMedioPago(m.id)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
-                      medioPago === m.id ? 'border-[#00B4D8] bg-[#E0F7FC]' : 'border-[#E2E8F0] hover:bg-[#F8FAFB]'
-                    }`}>
-                    <Icon size={18} className={medioPago === m.id ? 'text-[#00B4D8]' : 'text-[#64748B]'} strokeWidth={1.5} />
-                    <span className={`text-sm font-medium ${medioPago === m.id ? 'text-[#00B4D8]' : 'text-[#0F172A]'}`}>{m.label}</span>
-                  </button>
-                )
-              })}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-[#0F172A]">Voucher / Gift Card</p>
+              <button onClick={() => { setUsarVoucher(!usarVoucher); setVoucher(null); setCodigoVoucher(''); setErrorVoucher('') }}
+                className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                  usarVoucher ? 'border-[#00B4D8] bg-[#E0F7FC] text-[#00B4D8]' : 'border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFB]'
+                }`}>
+                {usarVoucher ? 'Quitar' : 'Agregar'}
+              </button>
             </div>
+            {usarVoucher && (
+              <div className="space-y-2">
+                {!voucher ? (
+                  <>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Ticket size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                        <input value={codigoVoucher}
+                          onChange={e => { setCodigoVoucher(e.target.value.toUpperCase()); setErrorVoucher('') }}
+                          onKeyDown={e => e.key === 'Enter' && validarVoucher()}
+                          placeholder="Codigo del voucher..."
+                          className={`w-full h-10 pl-9 pr-3 rounded-lg border text-sm font-mono placeholder:font-sans placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 ${
+                            errorVoucher ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                          }`}
+                        />
+                      </div>
+                      <button onClick={validarVoucher} disabled={validandoVoucher || !codigoVoucher.trim()}
+                        className="h-10 px-3 bg-[#00B4D8] hover:bg-[#0096B4] disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+                        {validandoVoucher ? '...' : 'Validar'}
+                      </button>
+                    </div>
+                    {errorVoucher && (
+                      <div className="flex items-center gap-2 text-xs text-red-500">
+                        <AlertCircle size={13} /> {errorVoucher}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="bg-[#E0F7FC] border border-[#00B4D8] rounded-xl p-3 flex items-center gap-3">
+                    <Check size={16} className="text-[#00B4D8] shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-mono font-medium text-[#00B4D8]">{voucher.codigo}</p>
+                      <p className="text-xs text-[#64748B]">
+                        {voucher.tipo === 'gift_card' ? 'Gift Card' : 'Voucher devolucion'} — ${Number(voucher.monto).toLocaleString('es-AR')}
+                        {Number(voucher.monto) > totalFinal && ` (se usa $${totalFinal.toLocaleString('es-AR')})`}
+                      </p>
+                    </div>
+                    <button onClick={() => { setVoucher(null); setCodigoVoucher('') }}
+                      className="text-[#94A3B8] hover:text-red-400 transition-colors"><X size={15} /></button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Medio de pago */}
+          <div>
+            <p className="text-sm font-medium text-[#0F172A] mb-2">
+              {usarVoucher && voucher && totalAResto > 0
+                ? `Medio de pago para el resto ($${totalAResto.toLocaleString('es-AR', { minimumFractionDigits: 2 })})`
+                : 'Medio de pago'}
+            </p>
+            {usarVoucher && voucher && totalAResto <= 0 ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700 text-center">
+                El voucher cubre el total de la compra
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {mediosPago.map(m => {
+                  const Icon = m.icon
+                  const sel  = usarVoucher && voucher ? medioPagoResto === m.id : medioPago === m.id
+                  return (
+                    <button key={m.id} onClick={() => usarVoucher && voucher ? setMedioPagoResto(m.id) : setMedioPago(m.id)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+                        sel ? 'border-[#00B4D8] bg-[#E0F7FC]' : 'border-[#E2E8F0] hover:bg-[#F8FAFB]'
+                      }`}>
+                      <Icon size={18} className={sel ? 'text-[#00B4D8]' : 'text-[#64748B]'} strokeWidth={1.5} />
+                      <span className={`text-sm font-medium ${sel ? 'text-[#00B4D8]' : 'text-[#0F172A]'}`}>{m.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Totales */}
           <div className="bg-[#F8FAFB] rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm text-[#64748B]">
               <span>Total productos</span>
@@ -334,7 +461,13 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
             {descuentoPct > 0 && (
               <div className="flex justify-between text-sm text-green-600">
                 <span>Descuento ({descuentoPct}%)</span>
-                <span>- ${descuentoMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                <span>-${descuentoMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {voucher && (
+              <div className="flex justify-between text-sm text-[#00B4D8]">
+                <span>Voucher {voucher.codigo}</span>
+                <span>-${montoVoucher.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
               </div>
             )}
             {!esCotizacion && (
@@ -353,6 +486,12 @@ export default function ModalCobro({ carrito, onCerrar, onConfirmar }: Props) {
               <span>Total</span>
               <span className="text-[#00B4D8]">${totalFinal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
             </div>
+            {voucher && totalAResto > 0 && (
+              <div className="flex justify-between text-sm font-medium text-red-500">
+                <span>Resta pagar</span>
+                <span>${totalAResto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
           </div>
         </div>
 
