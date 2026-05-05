@@ -169,7 +169,7 @@ export default function POSPage() {
   }
 
   async function confirmarCobro(
-    medioPago: string, tipoComprobante: string, descuentoPct: number, clienteId: string | null
+    medioPago: string, tipoComprobante: string, descuentoPct: number, clienteId: string | null, voucherId?: string | null
   ): Promise<{ id: string; numero: number; tipo: string } | null | undefined> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !puntoVentaSeleccionado) return null

@@ -101,20 +101,25 @@ export default function ModalGiftCard({ onCerrar, onGuardado }: Props) {
     ventana.document.write(`
       <html><head><title>Gift Card ${giftCardGenerada.codigo}</title>
       <style>
+        @page { size: 400px 520px; margin: 0; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f5f5f5; }
-        .card { background: linear-gradient(135deg, #00B4D8, #0096B4); border-radius: 16px; padding: 40px; max-width: 420px; width: 100%; color: white; text-align: center; }
-        .logo { font-size: 32px; font-weight: bold; margin-bottom: 4px; }
-        .subtitulo { font-size: 14px; opacity: 0.8; margin-bottom: 32px; }
-        .para { font-size: 13px; opacity: 0.8; margin-bottom: 4px; }
-        .beneficiario { font-size: 20px; font-weight: bold; margin-bottom: 24px; }
-        .monto { font-size: 56px; font-weight: bold; margin-bottom: 4px; }
-        .monto-label { font-size: 12px; opacity: 0.7; margin-bottom: 32px; }
-        .codigo-label { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .codigo { font-size: 24px; font-family: monospace; font-weight: bold; letter-spacing: 2px; background: rgba(255,255,255,0.2); padding: 12px 20px; border-radius: 8px; margin-bottom: 24px; }
-        .info { font-size: 11px; opacity: 0.7; line-height: 1.6; }
-        .vence { font-size: 12px; opacity: 0.6; margin-top: 12px; }
-        @media print { body { background: white; } }
+        body { font-family: Arial, sans-serif; width: 400px; height: 520px; display: flex; align-items: center; justify-content: center; background: #f5f5f5; }
+        .card { background: linear-gradient(135deg, #00B4D8, #0096B4); border-radius: 16px; padding: 40px 36px; width: 360px; color: white; text-align: center; }
+        .logo { font-size: 30px; font-weight: bold; margin-bottom: 4px; letter-spacing: -0.5px; }
+        .subtitulo { font-size: 14px; opacity: 0.85; margin-bottom: 28px; }
+        .para { font-size: 12px; opacity: 0.75; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+        .beneficiario { font-size: 22px; font-weight: bold; margin-bottom: 20px; }
+        .monto { font-size: 52px; font-weight: bold; margin-bottom: 2px; letter-spacing: -1px; }
+        .monto-label { font-size: 11px; opacity: 0.7; margin-bottom: 28px; text-transform: uppercase; letter-spacing: 1px; }
+        .divider { border: none; border-top: 1px solid rgba(255,255,255,0.25); margin: 0 0 20px 0; }
+        .codigo-label { font-size: 10px; opacity: 0.7; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
+        .codigo { font-size: 22px; font-family: 'Courier New', monospace; font-weight: bold; letter-spacing: 3px; background: rgba(255,255,255,0.2); padding: 12px 16px; border-radius: 10px; margin-bottom: 20px; }
+        .info { font-size: 11px; opacity: 0.7; line-height: 1.7; }
+        .vence { font-size: 11px; opacity: 0.55; margin-top: 10px; }
+        @media print { 
+          @page { size: 400px 520px; margin: 0; }
+          body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
       </style></head>
       <body>
         <div class="card">
@@ -123,6 +128,7 @@ export default function ModalGiftCard({ onCerrar, onGuardado }: Props) {
           ${beneficiarioNombre ? `<div class="para">Para</div><div class="beneficiario">${beneficiarioNombre}</div>` : ''}
           <div class="monto">$${giftCardGenerada.monto.toLocaleString('es-AR')}</div>
           <div class="monto-label">Monto de la gift card</div>
+          <hr class="divider">
           <div class="codigo-label">Codigo unico</div>
           <div class="codigo">${giftCardGenerada.codigo}</div>
           <div class="info">Valida en cualquier sucursal BeHappy<br>Uso unico — no acumulable</div>

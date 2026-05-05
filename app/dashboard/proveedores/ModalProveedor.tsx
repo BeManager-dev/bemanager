@@ -29,6 +29,11 @@ const CONDICIONES_IVA = [
   { id: 'exento',                label: 'Exento'                },
 ]
 
+function FieldError({ mensaje }: { mensaje?: string }) {
+  if (!mensaje) return null
+  return <p className="text-xs text-red-500 mt-1">{mensaje}</p>
+}
+
 export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Props) {
   const supabase = createClient()
   const esNuevo = !proveedor
@@ -45,17 +50,25 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
   })
 
   const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState('')
+  const [errores, setErrores] = useState<Record<string, string>>({})
+  const [errorGeneral, setErrorGeneral] = useState('')
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = e.target
     setForm(prev => ({ ...prev, [name]: value }))
+    setErrores(prev => ({ ...prev, [name]: '' }))
   }
 
   async function handleGuardar(e: React.FormEvent) {
     e.preventDefault()
+    setErrorGeneral('')
+
+    const errs: Record<string, string> = {}
+    if (!form.razon_social.trim()) errs.razon_social = 'La razon social es obligatoria'
+    if (!form.cuit.trim()) errs.cuit = 'El CUIT es obligatorio'
+    if (Object.keys(errs).length > 0) { setErrores(errs); return }
+
     setGuardando(true)
-    setError('')
 
     const payload = {
       razon_social:    form.razon_social,
@@ -70,10 +83,10 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
 
     if (esNuevo) {
       const { error } = await supabase.from('proveedores').insert(payload)
-      if (error) { setError(error.message); setGuardando(false); return }
+      if (error) { setErrorGeneral(error.message); setGuardando(false); return }
     } else {
       const { error } = await supabase.from('proveedores').update(payload).eq('id', proveedor.id)
-      if (error) { setError(error.message); setGuardando(false); return }
+      if (error) { setErrorGeneral(error.message); setGuardando(false); return }
     }
 
     setGuardando(false)
@@ -93,15 +106,18 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
           </button>
         </div>
 
-        <form onSubmit={handleGuardar}>
+        <form onSubmit={handleGuardar} noValidate>
           <div className="px-6 py-5 space-y-4">
 
             <div>
-              <label className="block text-sm text-[#64748B] mb-1.5">Razón social *</label>
-              <input name="razon_social" value={form.razon_social} onChange={handleChange} required
+              <label className="block text-sm text-[#64748B] mb-1.5">Razon social *</label>
+              <input name="razon_social" value={form.razon_social} onChange={handleChange}
                 placeholder="Ej: Distribuidora Norte S.R.L."
-                className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                className={`w-full h-10 px-3 rounded-lg border text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 ${
+                  errores.razon_social ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                }`}
               />
+              <FieldError mensaje={errores.razon_social} />
             </div>
 
             <div>
@@ -115,13 +131,16 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-[#64748B] mb-1.5">CUIT *</label>
-                <input name="cuit" value={form.cuit} onChange={handleChange} required
+                <input name="cuit" value={form.cuit} onChange={handleChange}
                   placeholder="30-12345678-9"
-                  className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                  className={`w-full h-10 px-3 rounded-lg border text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 ${
+                    errores.cuit ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                  }`}
                 />
+                <FieldError mensaje={errores.cuit} />
               </div>
               <div>
-                <label className="block text-sm text-[#64748B] mb-1.5">Condición IVA</label>
+                <label className="block text-sm text-[#64748B] mb-1.5">Condicion IVA</label>
                 <select name="condicion_iva" value={form.condicion_iva} onChange={handleChange}
                   className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] bg-white">
                   {CONDICIONES_IVA.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -132,7 +151,7 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
             <div>
               <label className="block text-sm text-[#64748B] mb-1.5">Nombre del contacto</label>
               <input name="contacto" value={form.contacto} onChange={handleChange}
-                placeholder="Ej: Martín López"
+                placeholder="Ej: Martin Lopez"
                 className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
               />
             </div>
@@ -146,7 +165,7 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
                 />
               </div>
               <div>
-                <label className="block text-sm text-[#64748B] mb-1.5">Teléfono</label>
+                <label className="block text-sm text-[#64748B] mb-1.5">Telefono</label>
                 <input name="telefono" value={form.telefono} onChange={handleChange}
                   placeholder="+54 9 381 000-0000"
                   className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
@@ -155,14 +174,16 @@ export default function ModalProveedor({ proveedor, onCerrar, onGuardado }: Prop
             </div>
 
             <div>
-              <label className="block text-sm text-[#64748B] mb-1.5">Dirección</label>
+              <label className="block text-sm text-[#64748B] mb-1.5">Direccion</label>
               <input name="direccion" value={form.direccion} onChange={handleChange}
                 placeholder="Ej: Av. Corrientes 1234, CABA"
                 className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
               />
             </div>
 
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+            {errorGeneral && (
+              <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{errorGeneral}</p>
+            )}
           </div>
 
           <div className="px-6 pb-6 flex gap-3">

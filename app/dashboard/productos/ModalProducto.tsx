@@ -26,6 +26,11 @@ interface Props {
 
 interface Categoria { id: string; nombre: string }
 
+function FieldError({ mensaje }: { mensaje?: string }) {
+  if (!mensaje) return null
+  return <p className="text-xs text-red-500 mt-1">{mensaje}</p>
+}
+
 export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado }: Props) {
   const supabase = createClient()
   const esNuevo = !producto
@@ -46,7 +51,8 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
   const [nuevaCategoria, setNuevaCategoria] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [generando, setGenerando] = useState(false)
-  const [error, setError] = useState('')
+  const [errores, setErrores] = useState<Record<string, string>>({})
+  const [errorGeneral, setErrorGeneral] = useState('')
 
   async function cargarCategorias() {
     const { data } = await supabase.from('categorias').select('id, nombre').order('nombre')
@@ -55,9 +61,7 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
 
   useEffect(() => {
     cargarCategorias()
-    if (esNuevo || copiarDe) {
-      generarNuevoCodigo()
-    }
+    if (esNuevo || copiarDe) generarNuevoCodigo()
   }, [])
 
   async function generarNuevoCodigo() {
@@ -70,6 +74,7 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value, type } = e.target
     setForm(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }))
+    setErrores(prev => ({ ...prev, [name]: '' }))
   }
 
   async function agregarCategoria() {
@@ -85,21 +90,21 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
 
   async function handleGuardar(e: React.FormEvent) {
     e.preventDefault()
-    setGuardando(true)
-    setError('')
+    setErrorGeneral('')
 
-    // Verificar que el código de barras no esté duplicado
+    const errs: Record<string, string> = {}
+    if (!form.nombre.trim()) errs.nombre = 'El nombre es obligatorio'
+    if (!form.precio || form.precio <= 0) errs.precio = 'Ingresa un precio mayor a 0'
+    if (Object.keys(errs).length > 0) { setErrores(errs); return }
+
+    setGuardando(true)
+
     if (form.codigo_barras) {
-      let query = supabase
-        .from('productos')
-        .select('id')
-        .eq('codigo_barras', form.codigo_barras)
-      if (!esNuevo && producto) {
-        query = query.neq('id', producto.id)
-      }
+      let query = supabase.from('productos').select('id').eq('codigo_barras', form.codigo_barras)
+      if (!esNuevo && producto) query = query.neq('id', producto.id)
       const { data: existente } = await query.maybeSingle()
       if (existente) {
-        setError('Ese código de barras ya está en uso por otro producto.')
+        setErrores(p => ({ ...p, codigo_barras: 'Este codigo de barras ya esta en uso' }))
         setGuardando(false)
         return
       }
@@ -129,10 +134,10 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
         }
       }
       const { error } = await supabase.from('productos').update(payload).eq('id', producto.id)
-      if (error) { setError(error.message); setGuardando(false); return }
+      if (error) { setErrorGeneral(error.message); setGuardando(false); return }
     } else {
       const { error } = await supabase.from('productos').insert(payload)
-      if (error) { setError(error.message); setGuardando(false); return }
+      if (error) { setErrorGeneral(error.message); setGuardando(false); return }
     }
 
     setGuardando(false)
@@ -152,15 +157,19 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
           </button>
         </div>
 
-        <form onSubmit={handleGuardar}>
+        <form onSubmit={handleGuardar} noValidate>
           <div className="px-6 py-5 space-y-4">
 
             <div>
               <label className="block text-sm text-[#64748B] mb-1.5">Nombre *</label>
-              <input name="nombre" value={form.nombre} onChange={handleChange} required
-                placeholder="Ej: Remera básica blanca"
-                className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+              <input name="nombre" value={form.nombre}
+                onChange={handleChange}
+                placeholder="Ej: Remera basica blanca"
+                className={`w-full h-10 px-3 rounded-lg border text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 ${
+                  errores.nombre ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                }`}
               />
+              <FieldError mensaje={errores.nombre} />
             </div>
 
             <div>
@@ -172,21 +181,24 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
             </div>
 
             <div>
-              <label className="block text-sm text-[#64748B] mb-1.5">Código de barras</label>
+              <label className="block text-sm text-[#64748B] mb-1.5">Codigo de barras</label>
               <div className="flex gap-2">
-                <input name="codigo_barras" value={form.codigo_barras} onChange={handleChange}
-                  placeholder="Generado automáticamente"
-                  className="flex-1 h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] font-mono placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                <input name="codigo_barras" value={form.codigo_barras}
+                  onChange={handleChange}
+                  placeholder="Generado automaticamente"
+                  className={`flex-1 h-10 px-3 rounded-lg border text-sm text-[#0F172A] font-mono placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 ${
+                    errores.codigo_barras ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                  }`}
                 />
                 <button type="button" onClick={generarNuevoCodigo} disabled={generando}
-                  title="Generar nuevo código único"
-                  className="h-10 px-3 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFB] text-[#64748B] transition-colors disabled:opacity-50"
-                >
+                  title="Generar nuevo codigo unico"
+                  className="h-10 px-3 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFB] text-[#64748B] transition-colors disabled:opacity-50">
                   <RefreshCw size={15} className={generando ? 'animate-spin' : ''} />
                 </button>
               </div>
+              <FieldError mensaje={errores.codigo_barras} />
               <p className="text-xs text-[#94A3B8] mt-1">
-                Se genera automáticamente y es único. Podés reemplazarlo con el código real del producto.
+                Se genera automaticamente y es unico. Podes reemplazarlo con el codigo real del producto.
               </p>
             </div>
 
@@ -195,17 +207,21 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
                 <label className="block text-sm text-[#64748B] mb-1.5">Precio (IVA incluido) *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
-                  <input name="precio" type="number" min={0} step={0.01} value={form.precio}
-                    onChange={handleChange} required
-                    className="w-full h-10 pl-7 pr-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
+                  <input name="precio" type="number" min={0} step={0.01}
+                    value={form.precio || ''}
+                    onChange={handleChange}
+                    placeholder="0,00"
+                    className={`w-full h-10 pl-7 pr-3 rounded-lg border text-sm text-[#0F172A] focus:outline-none focus:ring-1 ${
+                      errores.precio ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
+                    }`}
                   />
                 </div>
+                <FieldError mensaje={errores.precio} />
               </div>
               <div>
-                <label className="block text-sm text-[#64748B] mb-1.5">Alícuota IVA</label>
+                <label className="block text-sm text-[#64748B] mb-1.5">Alicuota IVA</label>
                 <select name="alicuota_iva" value={form.alicuota_iva} onChange={handleChange}
-                  className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] bg-white"
-                >
+                  className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] bg-white">
                   <option value={0}>0%</option>
                   <option value={10.5}>10.5%</option>
                   <option value={21}>21%</option>
@@ -215,13 +231,13 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
             </div>
 
             <div>
-              <label className="block text-sm text-[#64748B] mb-1.5">Categoría</label>
+              <label className="block text-sm text-[#64748B] mb-1.5">Categoria</label>
               {agregandoCategoria ? (
                 <div className="flex gap-2">
                   <input autoFocus value={nuevaCategoria}
                     onChange={e => setNuevaCategoria(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), agregarCategoria())}
-                    placeholder="Nombre de la nueva categoría"
+                    placeholder="Nombre de la nueva categoria"
                     className="flex-1 h-10 px-3 rounded-lg border border-[#00B4D8] text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#00B4D8]"
                   />
                   <button type="button" onClick={agregarCategoria}
@@ -236,13 +252,12 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
               ) : (
                 <div className="flex gap-2">
                   <select name="categoria_id" value={form.categoria_id} onChange={handleChange}
-                    className="flex-1 h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] bg-white"
-                  >
-                    <option value="">Sin categoría</option>
+                    className="flex-1 h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] bg-white">
+                    <option value="">Sin categoria</option>
                     {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                   </select>
                   <button type="button" onClick={() => setAgregandoCategoria(true)}
-                    title="Nueva categoría"
+                    title="Nueva categoria"
                     className="h-10 px-3 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFB] text-[#64748B] hover:text-[#00B4D8] transition-colors">
                     <Plus size={15} />
                   </button>
@@ -250,7 +265,9 @@ export default function ModalProducto({ producto, copiarDe, onCerrar, onGuardado
               )}
             </div>
 
-            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+            {errorGeneral && (
+              <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{errorGeneral}</p>
+            )}
           </div>
 
           <div className="px-6 pb-6 flex gap-3">
