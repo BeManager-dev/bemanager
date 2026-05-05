@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   ShoppingCart, Package, Tag, Users, Truck,
   DollarSign, BarChart2, Settings, LogOut,
-  Menu, X, Wallet, FileText, Ticket
+  Menu, X, Wallet, FileText, Ticket, AlertTriangle
 } from 'lucide-react'
 
 const navAdmin = [
@@ -23,6 +23,7 @@ const navAdmin = [
   { href: '/dashboard/finanzas/comprobantes',  label: 'Comprobantes',    icon: FileText     },
   { href: '/dashboard/configuracion',          label: 'Configuracion',   icon: Settings     },
   { href: '/dashboard/vouchers', label: 'Vouchers', icon: Ticket },
+  { href: '/dashboard/defectuosos', label: 'Defectuosos', icon: AlertTriangle },
 ]
 
 const navVendedor = [
