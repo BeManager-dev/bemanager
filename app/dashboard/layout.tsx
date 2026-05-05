@@ -21,9 +21,9 @@ const navAdmin = [
   { href: '/dashboard/finanzas',               label: 'Finanzas',        icon: DollarSign   },
   { href: '/dashboard/reportes',               label: 'Dashboard',       icon: BarChart2    },
   { href: '/dashboard/finanzas/comprobantes',  label: 'Comprobantes',    icon: FileText     },
+  { href: '/dashboard/vouchers',               label: 'Vouchers',        icon: Ticket       },
+  { href: '/dashboard/defectuosos',            label: 'Defectuosos',     icon: AlertTriangle},
   { href: '/dashboard/configuracion',          label: 'Configuracion',   icon: Settings     },
-  { href: '/dashboard/vouchers', label: 'Vouchers', icon: Ticket },
-  { href: '/dashboard/defectuosos', label: 'Defectuosos', icon: AlertTriangle },
 ]
 
 const navVendedor = [
