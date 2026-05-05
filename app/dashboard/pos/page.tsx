@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Barcode, Plus, Minus, Trash2, ShoppingCart, CreditCard, Lock } from 'lucide-react'
+import { Search, Barcode, Plus, Minus, Trash2, ShoppingCart, CreditCard, Lock, Zap, RefreshCw } from 'lucide-react'
 import ModalCobro from './ModalCobro'
+import ModalDevolucion, { ItemDevolucion } from './ModalDevolucion'
 import { siguienteNumero } from '@/lib/numeracion'
 
 interface Producto {
@@ -24,9 +25,11 @@ export default function POSPage() {
   const supabase = createClient()
   const [busqueda, setBusqueda] = useState('')
   const [productos, setProductos] = useState<Producto[]>([])
+  const [productosRapidos, setProductosRapidos] = useState<Producto[]>([])
   const [carrito, setCarrito] = useState<ItemCarrito[]>([])
   const [buscando, setBuscando] = useState(false)
   const [mostrarPago, setMostrarPago] = useState(false)
+  const [mostrarDevolucion, setMostrarDevolucion] = useState(false)
   const [esAdmin, setEsAdmin] = useState(false)
   const [puntosVenta, setPuntosVenta] = useState<PuntoVenta[]>([])
   const [puntoVentaSeleccionado, setPuntoVentaSeleccionado] = useState<PuntoVenta | null>(null)
@@ -43,10 +46,7 @@ export default function POSPage() {
     if (!user) return
 
     const { data: perfilData } = await supabase
-      .from('perfiles')
-      .select('rol, punto_venta_id')
-      .eq('id', user.id)
-      .single()
+      .from('perfiles').select('rol, punto_venta_id').eq('id', user.id).single()
 
     if (!perfilData) return
     const admin = perfilData.rol === 'admin'
@@ -57,7 +57,10 @@ export default function POSPage() {
         .from('puntos_venta').select('id, nombre, numero, deposito_id')
         .eq('activo', true).order('nombre')
       setPuntosVenta(pvData || [])
-      if (pvData && pvData.length > 0) setPuntoVentaSeleccionado(pvData[0])
+      if (pvData && pvData.length > 0) {
+        setPuntoVentaSeleccionado(pvData[0])
+        await cargarProductosRapidos(pvData[0].id)
+      }
       setCajaAbierta(true)
     } else {
       if (perfilData.punto_venta_id) {
@@ -67,6 +70,7 @@ export default function POSPage() {
         if (pvData) {
           setPuntoVentaSeleccionado(pvData)
           await verificarCaja(pvData.id)
+          await cargarProductosRapidos(pvData.id)
         } else {
           setCajaAbierta(false)
         }
@@ -76,11 +80,44 @@ export default function POSPage() {
     }
   }
 
+  async function cargarProductosRapidos(puntoVentaId: string) {
+    const { data: comprobantes } = await supabase
+      .from('comprobantes').select('id')
+      .eq('punto_venta_id', puntoVentaId).eq('estado', 'emitido')
+      .in('tipo', ['factura_a', 'factura_b', 'factura_c'])
+
+    if (!comprobantes || comprobantes.length === 0) return
+
+    const { data: items } = await supabase
+      .from('items_comprobante').select('producto_id, cantidad')
+      .in('comprobante_id', comprobantes.map(c => c.id))
+
+    if (!items || items.length === 0) return
+
+    const conteo: Record<string, number> = {}
+    items.forEach(i => {
+      if (!conteo[i.producto_id]) conteo[i.producto_id] = 0
+      conteo[i.producto_id] += Number(i.cantidad)
+    })
+
+    const top20ids = Object.entries(conteo)
+      .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([id]) => id)
+
+    if (top20ids.length === 0) return
+
+    const { data: prods } = await supabase.from('productos')
+      .select('id, nombre, codigo_barras, sku, precio, alicuota_iva')
+      .in('id', top20ids).eq('activo', true)
+
+    if (!prods) return
+
+    const ordenados = top20ids.map(id => prods.find(p => p.id === id)).filter(Boolean) as Producto[]
+    setProductosRapidos(ordenados)
+  }
+
   async function verificarCaja(puntoVentaId: string) {
-    const { data } = await supabase
-      .from('sesiones_caja').select('id')
-      .eq('punto_venta_id', puntoVentaId)
-      .eq('estado', 'abierta').maybeSingle()
+    const { data } = await supabase.from('sesiones_caja').select('id')
+      .eq('punto_venta_id', puntoVentaId).eq('estado', 'abierta').maybeSingle()
     setCajaAbierta(!!data)
   }
 
@@ -88,8 +125,8 @@ export default function POSPage() {
     if (busqueda.length < 2) { setProductos([]); return }
     const timeout = setTimeout(async () => {
       setBuscando(true)
-      const { data } = await supabase
-        .from('productos').select('id, nombre, codigo_barras, sku, precio, alicuota_iva')
+      const { data } = await supabase.from('productos')
+        .select('id, nombre, codigo_barras, sku, precio, alicuota_iva')
         .eq('activo', true)
         .or(`nombre.ilike.%${busqueda}%,codigo_barras.eq.${busqueda},sku.ilike.%${busqueda}%`)
         .limit(8)
@@ -137,10 +174,10 @@ export default function POSPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !puntoVentaSeleccionado) return null
 
-    const subtotalBruto  = carrito.reduce((acc, i) => acc + i.subtotal, 0)
-    const descuentoMonto = subtotalBruto * (descuentoPct / 100)
+    const subtotalBruto   = carrito.reduce((acc, i) => acc + i.subtotal, 0)
+    const descuentoMonto  = subtotalBruto * (descuentoPct / 100)
     const subtotalConDesc = subtotalBruto - descuentoMonto
-    const esCotizacion   = tipoComprobante === 'cotizacion'
+    const esCotizacion    = tipoComprobante === 'cotizacion'
     const iva = esCotizacion ? 0
       : carrito.reduce((acc, i) => acc + ((i.subtotal * (1 - descuentoPct / 100)) / (1 + i.alicuota_iva / 100) * (i.alicuota_iva / 100)), 0)
     const total = subtotalConDesc
@@ -201,11 +238,7 @@ export default function POSPage() {
   const subtotal = carrito.reduce((acc, i) => acc + i.subtotal, 0)
 
   if (cajaAbierta === null) {
-    return (
-      <div className="flex items-center justify-center h-64 text-sm text-[#94A3B8]">
-        Verificando caja...
-      </div>
-    )
+    return <div className="flex items-center justify-center h-64 text-sm text-[#94A3B8]">Verificando caja...</div>
   }
 
   if (cajaAbierta === false) {
@@ -229,13 +262,18 @@ export default function POSPage() {
   return (
     <>
       <div className="flex flex-col gap-4 h-[calc(100vh-7rem)]">
+
         <div className="flex items-center justify-between">
           <div>
             {esAdmin ? (
               <div className="flex items-center gap-3">
                 <span className="text-sm text-[#64748B]">Punto de venta:</span>
                 <select value={puntoVentaSeleccionado?.id || ''}
-                  onChange={e => { const pv = puntosVenta.find(p => p.id === e.target.value); setPuntoVentaSeleccionado(pv || null) }}
+                  onChange={async e => {
+                    const pv = puntosVenta.find(p => p.id === e.target.value)
+                    setPuntoVentaSeleccionado(pv || null)
+                    if (pv) await cargarProductosRapidos(pv.id)
+                  }}
                   className="h-9 px-3 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:outline-none focus:border-[#00B4D8] bg-white">
                   {puntosVenta.map(pv => <option key={pv.id} value={pv.id}>{pv.nombre}</option>)}
                 </select>
@@ -249,6 +287,10 @@ export default function POSPage() {
               </div>
             )}
           </div>
+          <button onClick={() => setMostrarDevolucion(true)}
+            className="flex items-center gap-2 h-9 px-3 border border-[#E2E8F0] bg-white hover:bg-[#F8FAFB] text-sm text-[#64748B] rounded-lg transition-colors">
+            <RefreshCw size={15} /> Devolucion
+          </button>
         </div>
 
         <div className="flex gap-6 flex-1 min-h-0">
@@ -265,30 +307,53 @@ export default function POSPage() {
               </div>
             </div>
 
-            {productos.length > 0 && (
-              <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
-                {productos.map((p, i) => (
-                  <button key={p.id} onClick={() => agregarAlCarrito(p)}
-                    className={`w-full flex items-center justify-between px-4 py-3 hover:bg-[#F8FAFB] transition-colors text-left ${i > 0 ? 'border-t border-[#E2E8F0]' : ''}`}>
-                    <div>
-                      <p className="text-sm font-medium text-[#0F172A]">{p.nombre}</p>
-                      <p className="text-xs text-[#94A3B8] mt-0.5">{p.sku || p.codigo_barras || '---'}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-[#00B4D8]">${p.precio.toLocaleString('es-AR')}</p>
-                      <p className="text-xs text-[#94A3B8]">IVA {p.alicuota_iva}% inc.</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
+            {busqueda.length >= 2 && (
+              <>
+                {buscando && <p className="text-sm text-[#94A3B8] text-center">Buscando...</p>}
+                {productos.length > 0 && (
+                  <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
+                    {productos.map((p, i) => (
+                      <button key={p.id} onClick={() => agregarAlCarrito(p)}
+                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-[#F8FAFB] transition-colors text-left ${i > 0 ? 'border-t border-[#E2E8F0]' : ''}`}>
+                        <div>
+                          <p className="text-sm font-medium text-[#0F172A]">{p.nombre}</p>
+                          <p className="text-xs text-[#94A3B8] mt-0.5">{p.sku || p.codigo_barras || '---'}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-[#00B4D8]">${p.precio.toLocaleString('es-AR')}</p>
+                          <p className="text-xs text-[#94A3B8]">IVA {p.alicuota_iva}% inc.</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
 
-            {buscando && <p className="text-sm text-[#94A3B8] text-center">Buscando...</p>}
-
-            {carrito.length === 0 && !busqueda && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center text-[#94A3B8]">
-                <ShoppingCart size={48} strokeWidth={1} className="mb-3" />
-                <p className="text-sm">Busca un producto o escanea un codigo de barras</p>
+            {busqueda.length < 2 && (
+              <div className="flex-1 overflow-y-auto">
+                {productosRapidos.length > 0 ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Zap size={14} className="text-[#00B4D8]" />
+                      <p className="text-xs font-medium text-[#64748B]">Mas vendidos en {puntoVentaSeleccionado?.nombre}</p>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                      {productosRapidos.map(p => (
+                        <button key={p.id} onClick={() => agregarAlCarrito(p)}
+                          className="bg-white border border-[#E2E8F0] rounded-xl p-3 text-left hover:border-[#00B4D8] hover:bg-[#F0FBFE] transition-colors group">
+                          <p className="text-sm font-medium text-[#0F172A] leading-tight line-clamp-2 mb-2 group-hover:text-[#00B4D8]">{p.nombre}</p>
+                          <p className="text-sm font-medium text-[#00B4D8]">${p.precio.toLocaleString('es-AR')}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center text-[#94A3B8]">
+                    <ShoppingCart size={48} strokeWidth={1} className="mb-3" />
+                    <p className="text-sm">Busca un producto o escanea un codigo de barras</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -359,6 +424,17 @@ export default function POSPage() {
           carrito={carrito}
           onCerrar={() => setMostrarPago(false)}
           onConfirmar={confirmarCobro}
+        />
+      )}
+
+      {mostrarDevolucion && puntoVentaSeleccionado && (
+        <ModalDevolucion
+          puntoVenta={puntoVentaSeleccionado}
+          esAdmin={esAdmin}
+          onCerrar={() => setMostrarDevolucion(false)}
+          onCambio={(items: ItemDevolucion[], comp: any) => {
+            setMostrarDevolucion(false)
+          }}
         />
       )}
     </>

@@ -51,7 +51,9 @@ export default function CajaPage() {
     if (!user) return
 
     const { data: perfil } = await supabase
-      .from('perfiles').select('rol, punto_venta_id').eq('id', user.id).single()
+      .from('perfiles')
+      .select('rol, punto_venta_id, punto_venta:puntos_venta(id, nombre, deposito_id)')
+      .eq('id', user.id).single()
 
     const admin = perfil?.rol === 'admin'
     setEsAdmin(admin)
@@ -64,10 +66,7 @@ export default function CajaPage() {
       pvs = data || []; setPuntosVenta(pvs)
       pv = puntoVenta || pvs[0] || null
     } else {
-      if (perfil?.punto_venta_id) {
-        const { data } = await supabase.from('puntos_venta').select('id, nombre, deposito_id').eq('id', perfil.punto_venta_id).single()
-        pv = data || null
-      }
+      pv = (perfil?.punto_venta as any) || null
     }
 
     if (!puntoVenta && pv) setPuntoVenta(pv)
@@ -134,22 +133,22 @@ export default function CajaPage() {
   }
 
   async function agregarEgreso() {
-    const errs: Record<string, string> = {}
-    if (!nuevoEgreso.descripcion.trim()) errs.descripcion = 'Ingresa una descripcion'
-    if (!nuevoEgreso.monto || nuevoEgreso.monto <= 0) errs.monto = 'Ingresa un monto mayor a 0'
-    if (Object.keys(errs).length > 0) { setErroresEgreso(errs); return }
+  const errs: Record<string, string> = {}
+  if (!nuevoEgreso.descripcion.trim()) errs.descripcion = 'Ingresa una descripcion'
+  if (!nuevoEgreso.monto || nuevoEgreso.monto <= 0) errs.monto = 'Ingresa un monto mayor a 0'
+  if (Object.keys(errs).length > 0) { setErroresEgreso(errs); return }
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user || !sesion) return
-    const catNombre = categoriasEgreso.find(c => c.id === nuevoEgreso.categoria_id)?.nombre || 'gasto_general'
-    await supabase.from('egresos_caja').insert({
-      sesion_caja_id: sesion.id, descripcion: nuevoEgreso.descripcion,
-      monto: nuevoEgreso.monto, categoria: catNombre, usuario_id: user.id,
-    })
-    setNuevoEgreso(p => ({ ...p, descripcion: '', monto: 0 }))
-    setErroresEgreso({})
-    setMostrarEgreso(false); cargarDatos()
-  }
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user || !sesion) return
+  const catNombre = categoriasEgreso.find(c => c.id === nuevoEgreso.categoria_id)?.nombre || 'gasto_general'
+  await supabase.from('egresos_caja').insert({
+    sesion_caja_id: sesion.id, descripcion: nuevoEgreso.descripcion,
+    monto: nuevoEgreso.monto, categoria: catNombre, usuario_id: user.id,
+  })
+  setNuevoEgreso(p => ({ ...p, descripcion: '', monto: 0 }))
+  setErroresEgreso({})
+  setMostrarEgreso(false); cargarDatos()
+}
 
   async function verDetalleHistorial(sesionId: string) {
     if (sesionDetalle === sesionId) { setSesionDetalle(null); return }
@@ -215,7 +214,7 @@ export default function CajaPage() {
 
       <div className="flex gap-1 bg-[#F8FAFB] rounded-xl p-1 border border-[#E2E8F0] w-fit">
         {[
-          { id: 'caja', label: 'Caja actual', icon: Banknote },
+          { id: 'caja',      label: 'Caja actual', icon: Banknote },
           ...(esAdmin ? [{ id: 'historial', label: 'Historial', icon: History }] : []),
         ].map(t => {
           const Icon = t.icon
@@ -399,9 +398,7 @@ export default function CajaPage() {
               <label className="block text-sm text-[#64748B] mb-1.5">Monto inicial en efectivo</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
-                <input type="number" min={0} step={0.01} value={montoInicial || ''}
-                  onChange={e => setMontoInicial(Number(e.target.value))}
-                  placeholder="0,00"
+                <input type="number" min={0} step={0.01} value={montoInicial || ''} onChange={e => setMontoInicial(Number(e.target.value))}
                   className="w-full h-10 pl-7 pr-3 rounded-lg border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
                 />
               </div>
@@ -419,7 +416,7 @@ export default function CajaPage() {
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
               <h2 className="text-base font-medium text-[#0F172A]">Registrar egreso</h2>
-              <button onClick={() => { setMostrarEgreso(false); setErroresEgreso({}) }} className="p-1.5 rounded-lg hover:bg-[#F8FAFB] text-[#64748B]"><X size={18} /></button>
+              <button onClick={() => setMostrarEgreso(false)} className="p-1.5 rounded-lg hover:bg-[#F8FAFB] text-[#64748B]"><X size={18} /></button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <div>
@@ -431,32 +428,23 @@ export default function CajaPage() {
               </div>
               <div>
                 <label className="block text-sm text-[#64748B] mb-1.5">Descripcion *</label>
-                <input value={nuevoEgreso.descripcion}
-                  onChange={e => { setNuevoEgreso(p => ({ ...p, descripcion: e.target.value })); setErroresEgreso(p => ({ ...p, descripcion: '' })) }}
+                <input value={nuevoEgreso.descripcion} onChange={e => setNuevoEgreso(p => ({ ...p, descripcion: e.target.value }))}
                   placeholder="Ej: Pago cadete, compra bolsas..."
-                  className={`w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 ${
-                    erroresEgreso.descripcion ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
-                  }`}
+                  className="w-full h-10 px-3 rounded-lg border border-[#E2E8F0] text-sm placeholder:text-[#94A3B8] focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
                 />
-                {erroresEgreso.descripcion && <p className="text-xs text-red-500 mt-1">{erroresEgreso.descripcion}</p>}
               </div>
               <div>
                 <label className="block text-sm text-[#64748B] mb-1.5">Monto *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
-                  <input type="number" min={0} step={0.01} value={nuevoEgreso.monto || ''}
-                    onChange={e => { setNuevoEgreso(p => ({ ...p, monto: Number(e.target.value) })); setErroresEgreso(p => ({ ...p, monto: '' })) }}
-                    placeholder="0,00"
-                    className={`w-full h-10 pl-7 pr-3 rounded-lg border text-sm focus:outline-none focus:ring-1 ${
-                      erroresEgreso.monto ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-[#E2E8F0] focus:border-[#00B4D8] focus:ring-[#00B4D8]'
-                    }`}
+                  <input type="number" min={0} step={0.01} value={nuevoEgreso.monto || ''} onChange={e => setNuevoEgreso(p => ({ ...p, monto: Number(e.target.value) }))}
+                    className="w-full h-10 pl-7 pr-3 rounded-lg border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
                   />
                 </div>
-                {erroresEgreso.monto && <p className="text-xs text-red-500 mt-1">{erroresEgreso.monto}</p>}
               </div>
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button onClick={() => { setMostrarEgreso(false); setErroresEgreso({}) }} className="flex-1 h-10 rounded-lg border border-[#E2E8F0] text-sm text-[#64748B] hover:bg-[#F8FAFB] transition-colors">Cancelar</button>
+              <button onClick={() => setMostrarEgreso(false)} className="flex-1 h-10 rounded-lg border border-[#E2E8F0] text-sm text-[#64748B] hover:bg-[#F8FAFB] transition-colors">Cancelar</button>
               <button onClick={agregarEgreso} className="flex-1 h-10 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors">Registrar egreso</button>
             </div>
           </div>
@@ -481,9 +469,7 @@ export default function CajaPage() {
                 <label className="block text-sm text-[#64748B] mb-1.5">Efectivo contado</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
-                  <input type="number" min={0} step={0.01} value={montoCierre || ''}
-                    onChange={e => setMontoCierre(Number(e.target.value))}
-                    placeholder="0,00"
+                  <input type="number" min={0} step={0.01} value={montoCierre || ''} onChange={e => setMontoCierre(Number(e.target.value))}
                     className="w-full h-10 pl-7 pr-3 rounded-lg border border-[#E2E8F0] text-sm focus:outline-none focus:border-[#00B4D8] focus:ring-1 focus:ring-[#00B4D8]"
                   />
                 </div>
